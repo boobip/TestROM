@@ -14,10 +14,8 @@
 	.segment "CODE"
 
 	.feature string_escapes
-
-num_pattern = 4
-test_pattern:
-.byte $ff,$00,$55,$aa,$1,$2,$4,$8,$10,$20,$40,$80,$aa,$55,$ff,$00
+	.include "zeropage.inc"
+	
 
 mode4_ula = $88
 mode4_palette:
@@ -73,7 +71,7 @@ loop:
 	sta acia_d ;write data
 .ENDMACRO
 
-;; send string to serial, trashes A
+;; send string to serial, trashes A, X
 .MACRO _ser_puts msg
 	.local msgbuf
 	ldx #256-.strlen(msg)
@@ -95,7 +93,7 @@ msgbuf: .byte msg,"X"
 	sta acia_d	
 .ENDMACRO
 
-;; send number in X as hex to serial, trashes A
+;; send number in X/Y as hex to serial, trashes A
 .MACRO _ser_phex reg
 	_tx_wait
 	reg
@@ -121,98 +119,162 @@ msgbuf: .byte msg,"X"
 	reg			; restore A
 .ENDMACRO
 
-
 ;;=====================================
-;; intial memory test error handler
+;; Helpers
 ;;
 
-err_row = 5
-err_zp_screen_ofs = 40*8*err_row
-err_s_screen_ofs = 40*8*(err_row+4)
-font_zero_p = font+8*('0'-' ')
+back2moslow_dst = $20;$200
 
-.MACRO _mem_error page, screenofs
-	cld		; decimal mode messes with phex
-	txs		; stash test pattern index in S
-			; doesn't matter that we overwrite S, same pattern different loop
-	
-	tax					;; mov read memory value to X
-	_ser_putc $a
-	_ser_phex txa		;; serial out
-	
-	tsx
-	eor test_pattern,X	;; make bitmask for bad bits	
-	tax					;; move bitmask to X
-	
-	_ser_putc '@'
-	_ser_putc '0'
-	_ser_putc page
-	_ser_phex tya			;; send address of failure
+back2moslow:
+	sei
+	lda #2
+	sta $ff00
+	lda #127
+	sta $fe4e
+;	lda #200
+;	ldx #3
+;	ldy #0
+;	jsr $fff4
+	jmp ($fffc)
+back2moslowend:	
 
-	_ser_putc ' '
-	_ser_putc '('
-
-.REPEAT 8, I
-	txa
-	lsr a
-	tax					;; stash bad bits
-	bcs :+
-	;; not in error
-	_ser_putc '0'+I
-	bne :++				;; always true
-:
-	.REPEAT 8, J
-		LDA font+8*('X'-' ')+J
-		STA screenofs+8*(40+I)+J
-	.ENDREP
-	_ser_putc 'X'
-:	
-.ENDREP
+.MACRO _back2mos
+	sei
+	ldx #0
+:	lda back2moslow,X
+	sta back2moslow_dst,x
+	inx
+	cpx #(back2moslowend-back2moslow)
+	bne :-
+	ldx #<back2moslow_dst
+	stx $fffc
+	ldx #>back2moslow_dst
+	stx $fffd
+.ENDMACRO
+;
 
 
-;; print last error address on screen
-	tya
-	lsr a
-	lsr a
-	lsr a
-	lsr a
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	asl		; mul 8 to get font char offset
-	asl
-	asl
-	tax		
-.REPEAT 8, J
-	lda font+8*('0'-' ')+J,X
-	sta screenofs+8*(40+10)+J
-.ENDREP
-	tya
-	and #$0F
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	asl		; mul 8 to get font char offset
-	asl
-	asl
-	tax
-.REPEAT 8, J
-	lda font+8*('0'-' ')+J,X
-	sta screenofs+8*(40+11)+J
-.ENDREP
-
-	_ser_puts ") expected "
-	tsx
-	lda test_pattern,x
-	tax
-	_ser_phex txa
-
-	tsx			;; pattern index back in X, address still in Y continue mem test
-	sed		; flag error
+.MACRO _pause_us n
+	ldy # >((n*10)/4-1)	;4 loops ~20 cycles or 10us at 2MHz
+	ldx # <((n*10)/4)
+:	dex				;2
+	bne :-			;3 inner loop 
+	dey
+	bne :-
 .ENDMACRO
 
+.MACRO _pause_ms n
+	_pause_us n*1000
+.ENDMACRO
+
+
+;;=====================================
+;; ZP memory test macros & defines
+;;
+
+.define mem_error_num  28
+
+.MACRO _mem_error n, pattern
+	ldx #n
+	jmp mem_error
+	.ident(.concat("zpmem_ret",.string(n))):
+	.ident(.concat("MEMERRPAT",.string(n))) = pattern
+.ENDMACRO
+
+.MACRO _checkboard_fill pattern
+	lda #pattern
+:	sta $00,Y
+	eor #$ff
+	iny
+	bne :-
+.ENDMACRO
+
+.MACRO _checkboard_check pattern, l1, l2
+:	lda $00,Y
+	cmp #pattern
+	beq :+
+	_mem_error l1, pattern
+:	iny
+	lda $00,Y
+	cmp #pattern ^ $ff
+	beq :+
+	_mem_error l2, pattern^$ff
+:	iny
+	bne :---
+.ENDMACRO
+
+.MACRO _march_fill pattern
+	lda #pattern
+:	sta $00,Y
+	iny
+	bne :-
+.ENDMACRO
+
+
+.MACRO _march_check pattern, l1
+:	lda $00,Y
+	cmp #pattern
+	beq :+
+	_mem_error l1, pattern
+:	iny
+	bne :--
+.ENDMACRO
+
+;; march C- extended
+;; ↕(w0); ↑(r0,w1,r1); ↑(r1,w0);
+;; ↓(r0,w1); ↓(r1,w0); ↕(r0)
+.MACRO _march_cminus_extended pattern, l1
+	_march_fill pattern
+
+;; ↑(r0,w1,r1);
+:	lda $00,Y
+	cmp #pattern
+	beq :+
+	_mem_error (0+l1), pattern
+:	lda #pattern^$ff
+	sta $00,Y
+	lda $00,Y
+	cmp #pattern^$ff
+	beq :+
+	_mem_error (1+l1), pattern^$ff
+:	iny
+	bne :---
+
+;; ↑(r1,w0);
+:	lda $00,Y
+	cmp #pattern^$ff
+	beq :+
+	_mem_error (2+l1), pattern^$ff
+:	lda #pattern
+	sta $00,Y
+	iny
+	bne :--
+
+;; ↓(r0,w1);
+:	dey
+	lda $00,Y
+	cmp #pattern
+	beq :+
+	_mem_error (3+l1), pattern
+:	lda #pattern^$ff
+	sta $00,Y
+	tya		;; Z = (y==0)
+	bne :--
+
+;; ↓(r1,w0);
+:	dey
+	lda $00,Y
+	cmp #pattern^$ff
+	beq :+
+	_mem_error (4+l1), pattern^$ff
+:	lda #pattern
+	sta $00,Y
+	tya		;; Z = (y==0)
+	bne :--
+
+;; ↕(r0)
+	_march_check pattern, (5+l1)
+.ENDMACRO
 
 ;;=====================================
 ;; initial reset handler
@@ -295,53 +357,34 @@ rst_handler:
 	bne :-
 
 ;; 
-	_ser_puts "Test zero page & stack"
+	_ser_puts "Test zero page"
 
-;; init bit positions on screen
-	ldx #0
-:	lda font_zero_p,X
-	sta err_zp_screen_ofs,X
-	sta err_s_screen_ofs,X
-	inx
-	cpx #8*8				; 8 bit positions
-	bne :-
 
-;; test zero page & stack
+;; test zero page
 
-	ldx #0
-zpstackloop:
-	txs		; stash pass count in S
-	txa
-	and #15 ; mask out pattern
-	tax		; pattern index in X
-	lda test_pattern,X
-	
+
+
+zpstackloop: ;; TODO: RENAME LATER
+
+;; checkerboard test
 	ldy #0
-:	sta $00,y	;; write pattern to ZP
-	sta $100,y	;; write pattern to STACK
-	iny
-	bne :-
+zp_check:
+	_checkboard_fill $55
+	_pause_ms 10
+	_checkboard_check $55, 0, 1
 
-:	lda $00,Y
-;eor #$aa ;; bodge to test error display
-	cmp test_pattern,X
-	beq zp_error_return
-	jmp zp_error	;; BAD ZP memory location
-zp_error_return:
+	_checkboard_fill $AA
+	_pause_ms 10
+	_checkboard_check $AA, 2, 3
 
-	lda $100,Y
-;eor #$55 ;; bodge to test error display
-	cmp test_pattern,X 
-	beq stack_error_return
-	jmp stack_error	;; BAD STACK memory location
-stack_error_return:
-	
-	iny
-	bne :-
-	
-	tsx		;; fetch pass counter
-	inx	
-	bne zpstackloop
+	;; march test 00,0F,33,55
+zp_march:
+	_march_cminus_extended $55, 4
+	_march_cminus_extended $0f, 10
+	_march_cminus_extended $33, 16
+	_march_cminus_extended $00, 22
+
+	;; check if D flag is set
 	lda #$99
 	adc #1			; add in decimal mode will set carry
 	bcc :+
@@ -349,10 +392,12 @@ stack_error_return:
 :	;; decimal mode still clear set so RAM test completed
 
 
-;; ZP & STACK passed the test	
+	;; ZP passed the test	
 	_ser_puts ", OK\n"
-
 	
+	;; check stack/rest of memory?
+
+
 
 ;	jmp rst_handler_2
 ;; fall through to reset handler 2
@@ -366,45 +411,139 @@ rst_handler_2:
 	sei
 	cld
 	ldx #$ff
-	txs			; intialise stack pointer
+	txs		; intialise stack pointer
 	
-	jmp back2mos
+	_back2mos
+	
+;:	jmp :- ;; spin wait for RESET
 
 	jmp rst_handler_3 ;; go to C code
 
-back2moslow:
-	sei
-	lda #2
-	sta $ff00
-	lda #127
-	sta $fe4e
-;	lda #200
-;	ldx #3
-;	ldy #0
-;	jsr $fff4
-	jmp ($fffc)
 
-back2mos:
-	sei
-	ldx #0
-:	lda back2moslow,X
-	sta $200,x
-	inx
-	cpx #(back2mos-back2moslow)
-	bne :-
-	ldx #0
-	stx $fffc
-	ldx #2
-	stx $fffd
-:	jmp :- ;; spin wait for RESET
+;;=====================================
+;; Zero page memory test error handler
+;; Entry:
+;;	A - memory value
+;;	X - return point/pattern
+;;	Y - ZP address
+;;	
+;;
 
+err_row = 5
+screen_ofs = 40*8*err_row
+font_zero_p = font+8*('0'-' ')
+
+; got... read, addr, pat
+; regs... a, x, y, s
+
+mem_error:
+	cld				;; decimal mode messes with phex
+	txs				;; stash ret/pat in S
 	
-zp_error:
-	_mem_error '0', err_zp_screen_ofs	
-	jmp zp_error_return;
+	tax				;; stash rval/pattern in X
+	_ser_putc $a
+	_ser_phex txa	;; serial out what was read
+	
+	_ser_putc '@'
+	_ser_putc '0'
+	_ser_putc '0'
+	_ser_phex tya			;; send address of failure
 
-stack_error:
-	_mem_error '1', err_s_screen_ofs
-	jmp stack_error_return;
+	_ser_putc ' '
+	_ser_putc '('
+	
+	txa					;; restore read value to A
+	tsx					;; mov ret/pat to X
+	eor mem_patterns,X	;; make bitmask for bad bits
+	tax
+
+.REPEAT 8, I
+	txa
+	asl a
+	tax					;; stash bad bits
+	bcs :+
+	;; not in error
+	_ser_putc '0'+7-I
+	bne :++				;; always true
+:
+	.REPEAT 8, J
+		LDA font+8*('X'-' ')+J
+		STA screen_ofs+8*(40+I)+J
+	.ENDREP
+	_ser_putc 'X'
+:	
+.ENDREP
+
+	_ser_puts ") expected "
+	tsx
+	lda mem_patterns,x
+	tax
+	_ser_phex txa
+
+;; print last error address on screen
+	tya
+	lsr a
+	lsr a
+	lsr a
+	lsr a
+	cmp #$0A
+	bcc :+
+	adc #$06
+:
+	asl		; mul 8 to get font char offset
+	asl
+	asl
+	tax		
+.REPEAT 8, J
+	lda font_zero_p+J, X
+	sta screen_ofs+8*(40+10)+J
+.ENDREP
+	tya
+	and #$0F
+	cmp #$0A
+	bcc :+
+	adc #$06
+:
+	asl		; mul 8 to get font char offset
+	asl
+	asl
+	tax
+.REPEAT 8, J
+	lda font_zero_p+J,X
+	sta screen_ofs+8*(40+11)+J
+.ENDREP
+
+;; init bit positions on screen
+	ldx #0
+:
+.REPEAT 8, I
+	lda font_zero_p+8*(7-I),x
+	sta screen_ofs+8*I,x
+.ENDREP
+	inx
+	cpx #8
+	bne :-
+
+	tsx		;; pattern index back in X, address still in Y continue mem test
+	sed		; flag error
+
+;; return to correct point in memory test
+.REPEAT mem_error_num-1, I
+	cpx #I
+	bne :+
+	jmp .ident(.concat("zpmem_ret",.string(I)))
+:
+.ENDREP
+	jmp .ident(.concat("zpmem_ret",.string(mem_error_num-1)))
+
+
+
+;; build memory patterns to match with error labels
+mem_patterns:
+.REPEAT mem_error_num, I
+	.byte .ident(.concat("MEMERRPAT",.string(I)))
+.ENDREP
+
+
 
 
