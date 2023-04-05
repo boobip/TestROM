@@ -12,3 +12,6 @@
 	.importzp _tmp0, _tmp1
 	.importzp _sa, _sx, _sy
 	.segment "CODE"
+
+	.feature string_escapes
+	.include "zeropage.inc"
