@@ -14,4 +14,76 @@
 	.segment "CODE"
 
 	.feature string_escapes
-	.include "zeropage.inc"
+	.include "_zeropage.inc"
+	.include "_helpers.inc"
+
+font_base = $f800
+
+;;=====================================
+;; Put character to screen using zeropage return mechanism
+;; On Entry:
+;;  r2_  : character to print
+;;  dst_ : destination pointer
+;; On Exit:
+;;  dst_ += 8
+;; Clobbers:
+;;  A, Y
+	.export zp_putc
+zp_putc:
+	lda r2_
+	and #$7f		;; defensive
+	ldy #>(font_base>>2)
+	sty src_+1
+	asl 
+	asl 
+	rol src_+1
+	asl 
+	rol src_+1		;; multiply character by 8
+	sta src_		;; (src) contains pointer to character in ROM
+	ldy #0
+:	lda (src_),Y
+	sta (dst_),Y
+	iny
+	cpy #8			;; 8 rows of char
+	bne :-
+	clc
+	lda dst_
+	adc #8
+	sta dst_
+	bcc :+
+	inc dst_+1	
+:	jmp (ret_leaf_)
+
+;;=====================================
+;; Put hex to screen using zeropage return mechanism 
+;; On Entry:
+;;  X    : number to print
+;;  dst_ : destination pointer
+;; On Exit:
+;;  dst_ += 8
+;; Clobbers:
+;;  A, Y
+	.export zp_phex
+zp_phex:
+	txa
+	lsr a
+	lsr a
+	lsr a
+	lsr a
+	cmp #$0A
+	bcc :+
+	adc #$06
+:
+	adc #$30
+	sta r2_
+	_jsr_zeropage ret_leaf_, zp_putc 
+	txa			; restore value
+	and #$0F
+	cmp #$0A
+	bcc :+
+	adc #$06
+:
+	adc #$30
+	sta r2_
+	_jsr_zeropage ret_leaf_, zp_putc
+	jmp (ret1_)

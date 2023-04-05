@@ -14,7 +14,8 @@
 ; $C5 is chosen
 
 	.importzp seed_
-
+	.importzp ret_leaf_
+	.export galois32o
 
 ; overlapped
 ; 83 cycles
@@ -22,7 +23,7 @@
 
 galois32o:
 	; rotate the middle bytes left
-	ldy seed_+2 ; will move to seed_+3 at the end
+	ldx seed_+2 ; will move to seed_+3 at the end
 	lda seed_+1
 	sta seed_+2
 	; compute seed_+1 ($C5>>1 = %1100010)
@@ -50,6 +51,7 @@ galois32o:
 	asl
 	asl
 	eor seed_+3
-	sty seed_+3 ; finish rotating byte 2 into 3
+	stx seed_+3 ; finish rotating byte 2 into 3
 	sta seed_+0
-	rts
+	jmp (ret_leaf_)
+;	rts

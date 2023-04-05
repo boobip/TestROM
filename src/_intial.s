@@ -14,7 +14,12 @@
 	.segment "CODE"
 
 	.feature string_escapes
-	.include "zeropage.inc"
+	.include "_zeropage.inc"
+	.include "_helpers.inc"
+	.include "_serial.inc"
+
+	
+soft_stack = $2ff
 	
 
 mode4_ula = $88
@@ -37,15 +42,26 @@ video_crtc_data = $fe01
 
 ;; CRTC @ $c46e in MOS
 
-; model B serial registers
-acia = $FE08
-acia_d = $FE09
-serialula = $FE10
-baud = 76800
+.MACRO _zp_puts msg
+	ldx #256-.strlen(msg)
+:	lda msgbuf-256+.strlen(msg),x
+	sta r2_
+	_jsr_zeropage ret_leaf_, zp_putc 
+	inx
+	bne :-
+	beq :+
+msgbuf: .byte msg
+:
+.ENDMACRO
+
+
 
 ;;=====================================
 ;; serial helper macros
 ;;
+
+baud = 76800
+
 
 ; 9600 baud settings
 .IF baud=9600
@@ -59,71 +75,12 @@ init_acia = $15
 init_ula = 64
 .ENDIF
 
-.MACRO _tx_wait
-	.local loop
-loop:
-	lda acia
-	and #10 ; tx buf empty or CTS high (don't block on disconnected serial)
-	beq loop
-.ENDMACRO
-
-.MACRO _tx_byte
-	sta acia_d ;write data
-.ENDMACRO
-
-;; send string to serial, trashes A, X
-.MACRO _ser_puts msg
-	.local msgbuf
-	ldx #256-.strlen(msg)
-:	
-	_tx_wait
-	lda msgbuf-256+.strlen(msg),x
-	_tx_byte
-	inx
-	bne :-
-	beq :+
-msgbuf: .byte msg,"X"
-:
-.ENDMACRO
-
-;; send a hardcoded character, trashes A
-.MACRO _ser_putc c
-	_tx_wait
-	lda #c
-	sta acia_d	
-.ENDMACRO
-
-;; send number in X/Y as hex to serial, trashes A
-.MACRO _ser_phex reg
-	_tx_wait
-	reg
-	lsr a
-	lsr a
-	lsr a
-	lsr a
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	adc #$30
-	_tx_byte
-	_tx_wait
-	reg			; restore value
-	and #$0F
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	adc #$30
-	_tx_byte
-	reg			; restore A
-.ENDMACRO
 
 ;;=====================================
 ;; Helpers
 ;;
 
-back2moslow_dst = $20;$200
+back2moslow_dst = $28;$200
 
 back2moslow:
 	sei
@@ -154,17 +111,15 @@ back2moslowend:
 ;
 
 
-.MACRO _pause_us n
-	ldy # >((n*10)/4-1)	;4 loops ~20 cycles or 10us at 2MHz
-	ldx # <((n*10)/4)
-:	dex				;2
-	bne :-			;3 inner loop 
-	dey
-	bne :-
-.ENDMACRO
-
-.MACRO _pause_ms n
-	_pause_us n*1000
+.MACRO _random_seed seed
+	lda #<(.LOWORD(seed))
+	sta seed_
+	lda #>(.LOWORD(seed))
+	sta seed_+1
+	lda #<(.HIWORD(seed))
+	sta seed_+2
+	lda #>(.HIWORD(seed))
+	sta seed_+3
 .ENDMACRO
 
 
@@ -308,7 +263,7 @@ rst_handler:
 	sta acia
 	lda #init_ula
 	sta serialula
-	_ser_puts "BooBip TestROM\n"
+	_ser_puts "\nBooBip TestROM\n"
 
 ;; clear screen
 	ldx #0
@@ -395,9 +350,56 @@ zp_march:
 	;; ZP passed the test	
 	_ser_puts ", OK\n"
 	
-	;; check stack/rest of memory?
+	;; DEBUG
+	_back2mos
 
+	
+seed = $b00b19
+	_random_seed seed
+	
+	;; check for 16/32KB by memory alias
+	lda #$80
+	sta memsize_
+	lsr
+	sta a:memsize_ + $4000
+	
+	;; feedback to user
+	
+	lda #8*8
+	sta dst_
+	lda #0
+	sta dst_+1		;; setup text destination
+	
+	lda memsize_
+	sta e_
+	bmi full32KB
+	_ser_puts "16KB detected\nTesting &0100-&3FFF"
+	ldx #$16		
+	jmp run_memtest
+full32KB:
+	_ser_puts "32KB detected\nTesting &0100-&7FFF"
+	ldx #$32
+run_memtest:
 
+	;; print memory size on screen
+	_jsr_zeropage ret1_, zp_phex
+
+	;; show bit positions on screen
+	_zp_puts "KB vv@aaaa 76543210 ee"
+	
+	lda #1
+	sta s_			;; boot mem test start from stack $100
+	sta k_			;; do 1 pass of memory test		
+	lda memsize_
+	sta e_			;; boot mem test do all detected
+		
+	;; do memory test
+	_jsr_zeropage ret_mem_, mem_test
+
+	;; System memory passed the test
+	lda r3_
+	bne rst_handler_2	;; skip printing OK if memory fault
+	_ser_puts ", OK\n"
 
 ;	jmp rst_handler_2
 ;; fall through to reset handler 2
@@ -413,7 +415,17 @@ rst_handler_2:
 	ldx #$ff
 	txs		; intialise stack pointer
 	
-	_back2mos
+	sta _sp0			;; intialise C soft stack
+	lda #>__STACKTOP__
+	sta _sp1
+	
+
+;	// cleanup Zero Page
+;	lda #0
+;	ldx #$50
+;:	sta &00,X
+;	inx
+;	bne :-	
 	
 ;:	jmp :- ;; spin wait for RESET
 

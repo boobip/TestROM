@@ -38,13 +38,6 @@ void init_bss(void);
 
 // arrived in C land. Zero page tested OK
 void rst_handler_3(void) {
-	p_ = 0;
-	s_ = 1;
-	e_ = 0x80;
-	n_ = e_ - s_;
-	__asm__("jmp mem_test");
-
-
 	volatile char* const screen = (char* const)0x7c00;
 
 	init_bss();

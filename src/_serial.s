@@ -14,4 +14,18 @@
 	.segment "CODE"
 
 	.feature string_escapes
-	.include "zeropage.inc"
+	.include "_zeropage.inc"
+	.include "_helpers.inc"
+	.include "_serial.inc"
+
+
+;;=====================================
+;; Put character to ZP using zero page return mechanism
+;; On Entry:
+;;  X : character to print
+;; Clobbers:
+;;  A
+	.export zp_ser_phex
+zp_ser_phex:
+	_ser_phex txa
+	jmp (ret_leaf_)

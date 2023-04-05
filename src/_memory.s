@@ -15,21 +15,10 @@
 
 	.feature string_escapes
 EMITZPVARS = 1
-	.include "zeropage.inc"
+	.include "_zeropage.inc"
+	.include "_helpers.inc"
+	.include "_serial.inc"
 
-
-.MACRO _pause_us n
-	ldy # >((n*10)/4-1)	;4 loops ~20 cycles or 10us at 2MHz
-	ldx # <((n*10)/4)
-:	dex				;2
-	bne :-			;3 inner loop 
-	dey
-	bne :-
-.ENDMACRO
-
-.MACRO _pause_ms n
-	_pause_us n*1000
-.ENDMACRO
 
 
 ;;=====================================
@@ -39,21 +28,32 @@ EMITZPVARS = 1
 ;; this all needs to be 16 bit for march
 
 
-.define mem_error_num  28
 
-.MACRO _mem_error pattern
-	.local ret
-	stx sx_
-	sty sy_
-	sta sa_
-	lda #<ret
-	sta ret2_
-	lda #>ret
-	sta ret2_+1
+
+.MACRO _mem_check pattern
+	.local ok
+	cmp pattern
+	beq ok
+	sta r0_
+	lda pattern
+	sta r1_
+	_mem_error
+ok:
+.ENDMACRO
+
+.MACRO _mem_check_imm pattern
+	.local ok
+	cmp #pattern
+	beq ok
+	sta r0_
 	lda #pattern
-	sta t0_
-	jmp mem_error
-ret:
+	sta r1_
+	_mem_error
+ok:
+.ENDMACRO
+
+.MACRO _mem_error
+	_jsr_zeropage ret_mem_err_, mem_error
 .ENDMACRO
 
 .MACRO _checkboard_fill pattern
@@ -77,19 +77,15 @@ ret:
 	sta p_+1
 	ldx n_
 :	lda (p_),Y
-	cmp #pattern
-	beq :+
-	_mem_error pattern
-:	iny
+	_mem_check_imm pattern
+	iny
 	lda (p_),Y
-	cmp #pattern ^ $ff
-	beq :+
-	_mem_error pattern^$ff
-:	iny
-	bne :---
+	_mem_check_imm pattern ^ $ff
+	iny
+	bne :-
 	inc p_+1
 	dex
-	bne :---
+	bne :-
 .ENDMACRO
 
 .MACRO _march_fill pattern
@@ -102,7 +98,7 @@ ret:
 	bne :-
 	inc p_+1
 	dex
-	bne :-	
+	bne :-
 .ENDMACRO
 
 
@@ -111,14 +107,12 @@ ret:
 	sta p_+1
 	ldx n_
 :	lda (p_),Y
-	cmp #pattern
-	beq :+
-	_mem_error pattern
-:	iny
-	bne :--
+	_mem_check_imm pattern
+	iny
+	bne :-
 	inc p_+1
 	dex
-	bne :--
+	bne :-
 .ENDMACRO
 
 ;; march C- extended
@@ -132,36 +126,30 @@ ret:
 	sta p_+1
 	ldx n_
 :	lda (p_),Y
-	cmp #pattern
-	beq :+
-	_mem_error pattern
-:	lda #pattern^$ff
+	_mem_check_imm pattern
+	lda #pattern^$ff
 	sta (p_),Y
 	lda (p_),Y
-	cmp #pattern^$ff
-	beq :+
-	_mem_error pattern^$ff
-:	iny
-	bne :---
+	_mem_check_imm pattern ^ $ff
+	iny
+	bne :-
 	inc p_+1
 	dex
-	bne :---
+	bne :-
 
 ;; ↑(r1,w0);
 	lda s_
 	sta p_+1
 	ldx n_
 :	lda (p_),Y
-	cmp #pattern^$ff
-	beq :+
-	_mem_error pattern^$ff
-:	lda #pattern
+	_mem_check_imm pattern ^ $ff
+	lda #pattern
 	sta (p_),Y
 	iny
-	bne :--
+	bne :-
 	inc p_+1
 	dex
-	bne :--
+	bne :-
 
 ;; ↓(r0,w1);
 	lda e_
@@ -170,15 +158,13 @@ ret:
 :	dec p_+1
 :	dey
 	lda (p_),Y
-	cmp #pattern
-	beq :+
-	_mem_error pattern
-:	lda #pattern^$ff
+	_mem_check_imm pattern
+	lda #pattern^$ff
 	sta (p_),Y
 	tya		;; Z = (y==0)
-	bne :--
+	bne :-
 	dex
-	bne :---
+	bne :--
 
 ;; ↓(r1,w0);
 	lda e_
@@ -187,54 +173,240 @@ ret:
 :	dec p_+1
 :	dey
 	lda (p_),Y
-	cmp #pattern^$ff
-	beq :+
-	_mem_error pattern^$ff
-:	lda #pattern
+	_mem_check_imm pattern ^ $ff
+	lda #pattern
 	sta (p_),Y
 	tya		;; Z = (y==0)
-	bne :--
+	bne :-
 	dex
-	bne :---
+	bne :--
 
 ;; ↕(r0)
 	_march_check pattern
 .ENDMACRO
 
+;; random memory test
+.MACRO _random_seed seed
+	lda #<(.LOWORD(seed))
+	sta seed_
+	lda #>(.LOWORD(seed))
+	sta seed_+1
+	lda #<(.HIWORD(seed))
+	sta seed_+2
+	lda #>(.HIWORD(seed))
+	sta seed_+3
+.ENDMACRO
+
+.MACRO _random_rng
+	.local ret
+	lda #<ret
+	sta ret_leaf_
+	lda #>ret
+	sta ret_leaf_+1
+	stx sx_
+	jmp galois32o
+ret:
+	ldx sx_
+.ENDMACRO
+
+.MACRO _random_fill
+	_mov_dword sseed_, seed_
+	lda s_
+	sta p_+1
+	ldx n_
+:	_random_rng
+	lda seed_
+	sta (p_),Y
+	iny
+	lda seed_+1
+	sta (p_),Y
+	iny
+	lda seed_+2
+	sta (p_),Y
+	iny
+	lda seed_+3
+	sta (p_),Y
+	iny
+	bne :-
+	inc p_+1
+	dex
+	bne :-
+.ENDMACRO
+
+.MACRO _random_check
+	_mov_dword seed_, sseed_
+	lda s_
+	sta p_+1
+	ldx n_
+:	_random_rng
+	lda (p_),Y
+	_mem_check seed_
+	iny
+	lda (p_),Y
+	_mem_check seed_+1
+	iny
+	lda (p_),Y
+	_mem_check seed_+2
+	iny
+	lda (p_),Y
+	_mem_check seed_+3
+	iny
+	bne :-
+	inc p_+1
+	dex
+	bne :-
+.ENDMACRO
+
 ;;=====================================
-;; 
-;;
-
-	.export mem_test_16K
-mem_test_16K:
-
-;;=====================================
-;; 
-;;
-
-
+;; System memory test function
+;; On Entry:
+;;	s_  : start page of test region
+;;	e_  : end page of test region
+;;	k_  : <0 for infinite test
+;; On Exit:
+;;  r3_ : error flags
 
 	.export mem_test
 mem_test:
-		
-	
-checker_fill_loop:
 	ldy #0
+	sty p_
+	sty p_+1
+	sty r3_
+	
+	sec
+	lda e_
+	sbc s_
+	sta n_
+	
+mem_test_loop:
+	;; checkerboard memory test
 	_checkboard_fill $55
 	_pause_ms 1
 	_checkboard_check $55
 
 	_checkboard_fill $aa
 	_pause_ms 1
-	_checkboard_check $aa	
+	_checkboard_check $aa
 
+	;; random memory test (probes address errors)
+	lda #4
+	sta i_
+rand_loop:
+	_random_fill
+	_random_check
+	dec i_
+	beq :+
+	jmp rand_loop
+:
+	
+	;; march c- extended
 	_march_cminus_extended $55
 	_march_cminus_extended $0f
 	_march_cminus_extended $33
 	_march_cminus_extended $00
 
-	jmp checker_fill_loop
+	lda r3_
+	lsr				;; test bottom bit of r3
+	bcs :+			;; loop forever if memory fault detected in bottom 16KB
+
+	bit k_			;; mem test counter, <0 means inf loops
+	bmi :+	
+	jmp (ret_mem_)	;; go to menu
+:	jmp mem_test_loop	;; test memory again
+
+;;=====================================
+;; Memory error handler
+;; 	r0   : value read
+;; 	r1_  : expected pattern
+;; 	p_,Y : address
+;; 	X    : preserve
+;; On exit
+;; 	r3_	: error
 
 mem_error:
-	jmp (ret2_)
+	stx sx_
+	sty sy_
+
+	;; set screen position
+	lda #13*8
+	sta dst_
+	lda #0
+	sta dst_+1
+
+	_ser_putc $a	;; send line feed
+	
+	ldx r0_			;; send read value
+	_jsr_zeropage ret1_, zp_phex
+	_jsr_zeropage ret_leaf_, zp_ser_phex
+	
+	_ser_putc '@'
+	
+	lda #16*8
+	sta dst_	;; set screen pointer
+	
+	ldx p_+1		;; send address of failure HI
+	_jsr_zeropage ret1_, zp_phex
+	_jsr_zeropage ret_leaf_, zp_ser_phex
+		
+	ldx p_			;; send address of failure LO
+	_jsr_zeropage ret1_, zp_phex
+	_jsr_zeropage ret_leaf_, zp_ser_phex
+
+	_ser_putc ' '
+	_ser_putc '('
+
+	lda r0_
+	eor r1_
+	tax
+
+.REPEAT 8, I
+	txa
+	asl a
+	tax					;; stash bad bits
+	bcs :+
+	;; not in error
+	_ser_putc '0'+7-I
+	bne :++				;; always true
+:
+	.REPEAT 8, J
+		LDA font+8*('X'-' ')+J
+		STA 8*(21+I)+J
+	.ENDREP
+	_ser_putc 'X'
+:	
+.ENDREP
+	
+	_ser_puts ") expected "
+	
+	lda #30*8
+	sta dst_	;; set screen pointer
+
+	ldx r1_				;; send expected value
+	_jsr_zeropage ret1_, zp_phex
+	_jsr_zeropage ret_leaf_, zp_ser_phex
+
+	;; record where fault was in return flags
+	lda p_+1
+	rol
+	rol
+	rol
+	and #3 		;; which 16KB chunk now in bottom 2 bits
+	tax
+	inx
+	lda #0
+	sec
+:	rol			;; move bit up
+	dex
+	bne :-		;; set bit marks region
+	
+	;; merge & store in r3
+	ora r3_
+	sta r3_		
+
+	;; restore registers & leave
+	ldx sx_
+	ldy sy_
+
+	jmp (ret_mem_err_)
+
 
