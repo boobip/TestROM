@@ -60,3 +60,14 @@ ret:
 	sta dst+3
 .ENDMACRO	
 
+.MACRO _mov_dword_imm dst, src
+	lda #<(.LOWORD(src))
+	sta seed_
+	lda #>(.LOWORD(src))
+	sta seed_+1
+	lda #<(.HIWORD(src))
+	sta seed_+2
+	lda #>(.HIWORD(src))
+	sta seed_+3
+.ENDMACRO
+

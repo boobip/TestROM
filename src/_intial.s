@@ -111,16 +111,6 @@ back2moslowend:
 ;
 
 
-.MACRO _random_seed seed
-	lda #<(.LOWORD(seed))
-	sta seed_
-	lda #>(.LOWORD(seed))
-	sta seed_+1
-	lda #<(.HIWORD(seed))
-	sta seed_+2
-	lda #>(.HIWORD(seed))
-	sta seed_+3
-.ENDMACRO
 
 
 ;;=====================================
@@ -353,9 +343,8 @@ zp_march:
 	;; DEBUG
 	_back2mos
 
-	
 seed = $b00b19
-	_random_seed seed
+	_mov_dword_imm seed_, seed
 	
 	;; check for 16/32KB by memory alias
 	lda #$80
