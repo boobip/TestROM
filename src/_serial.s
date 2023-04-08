@@ -17,6 +17,7 @@
 	.include "_zeropage.inc"
 	.include "_helpers.inc"
 	.include "_serial.inc"
+	.include "_hardware.inc"
 
 
 ;;=====================================

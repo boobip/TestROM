@@ -17,11 +17,8 @@
 	.include "_zeropage.inc"
 	.include "_helpers.inc"
 	.include "_serial.inc"
-
+	.include "_hardware.inc"
 	
-soft_stack = $2ff
-	
-
 mode4_ula = $88
 mode4_palette:
 .byte $07,$17,$27,$37,$47,$57,$67,$77,$80,$90,$a0,$b0,$c0,$d0,$e0,$f0
@@ -29,10 +26,6 @@ mode4_crtc:
 .byte $3f,$28,$31,$24,$26,$00,$20,$22,$01,$07,$67,$08
 .byte >(screen_start),<(screen_start),$00,$00
 screen_start=0;$5800/8
-video_ula = $fe20
-video_ula_palette = $fe21
-video_crtc_reg  = $fe00
-video_crtc_data = $fe01
 
 
 ;;MODE(s) 	Palette register writes (hex)
@@ -57,11 +50,10 @@ msgbuf: .byte msg
 
 
 ;;=====================================
-;; serial helper macros
+;; Serial initialisation constants
 ;;
 
 baud = 76800
-
 
 ; 9600 baud settings
 .IF baud=9600
@@ -109,7 +101,6 @@ back2moslowend:
 	stx $fffd
 .ENDMACRO
 ;
-
 
 
 
@@ -241,7 +232,7 @@ rst_handler:
 	bpl :-
 	ldx #15
 :	lda mode4_crtc,X
-	stx video_crtc_reg
+	stx video_crtc_addr
 	sta video_crtc_data
 	dex
 	bpl :-
@@ -253,6 +244,7 @@ rst_handler:
 	sta acia
 	lda #init_ula
 	sta serialula
+		
 	_ser_puts "\nBooBip TestROM\n"
 
 ;; clear screen
@@ -307,8 +299,6 @@ rst_handler:
 
 ;; test zero page
 
-
-
 zpstackloop: ;; TODO: RENAME LATER
 
 ;; checkerboard test
@@ -346,7 +336,7 @@ zp_march:
 seed = $b00b19
 	_mov_dword_imm seed_, seed
 	
-	;; check for 16/32KB by memory alias
+;; check for 16/32KB by memory alias
 	lda #$80
 	sta memsize_
 	lsr
@@ -404,6 +394,8 @@ rst_handler_2:
 	ldx #$ff
 	txs		; intialise stack pointer
 	
+
+	lda #<__STACKTOP__
 	sta _sp0			;; intialise C soft stack
 	lda #>__STACKTOP__
 	sta _sp1

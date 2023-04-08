@@ -1,7 +1,3 @@
-; model B serial registers
-acia = $FE08
-acia_d = $FE09
-serialula = $FE10
 
 ;;=====================================
 ;; serial helper macros
@@ -19,7 +15,7 @@ loop:
 	sta acia_d ;write data
 .ENDMACRO
 
-;; send string to serial, trashes A, X
+;; send inline string to serial, trashes A, X
 .MACRO _ser_puts msg
 	.local msgbuf
 	ldx #256-.strlen(msg)
