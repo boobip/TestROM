@@ -6,12 +6,7 @@
 #include "ROM.h"
 
 
-extern void save_zp(void);
-extern void restore_zp(void);
-
 static const char** const _os_zp_commandpointer = (const char**)0xf2;
-
-
 
 #define SECTION(x) __attribute__((section(x)))
 #define INIT_STACK(x) __asm__ volatile ( "lda #>" x "\nsta _sp1\nlda #<" x "\nsta _sp0\n" : : : "a" )
@@ -19,7 +14,6 @@ static const char** const _os_zp_commandpointer = (const char**)0xf2;
 // force strings into hardware window
 #define DEFSTRING(n) SECTION("RODATAHW")  const char n[]
 
-//DEFSTRING(test) = "Where did this string get put?";
 DEFSTRING(myhelp) = "TESTROM";
 DEFSTRING(exthelp) = "\
   This ROM must be inserted in the\r  OS ROM socket (IC 51).\r\
@@ -30,25 +24,10 @@ static void osasci(char c) {
 	__asm__ __volatile__("jsr $ffe3" : : "Aq" (c));
 }
 
-
 SECTION("CODEHW")
 static void osnewl() {
 	__asm__ __volatile__("jsr $ffe7" : : : "a");
 }
-
-//SECTION("CODEHW")
-//static void oswrch(char c) {
-//	// OS write character
-//	__asm__ __volatile__("jsr $ffee" : : "Aq" (c));
-//}
-
-
-SECTION("CODEHW")
-static void osbyte(uint8_t func, uint8_t* x, uint8_t* y) {
-	__asm__ __volatile__("jsr $fff4" : "+xq"(*x), "+yq"(*y) : "Aq" (func));
-}
-
-
 
 SECTION("CODEHW")
 static int strncmp(const char* s1, const char* s2, size_t n)
@@ -124,7 +103,7 @@ void swr_help(uint8_t ofs)
 			}
 
 			if (c == *myhelp) {
-				uint8_t len = sizeof(myhelp)-1;
+				uint8_t len = sizeof(myhelp) - 1;
 				int r = strncmp(myhelp, p, len);
 				char e = p[len];
 				if (r == 0 && (e == 0xd || e == ' ')) {
@@ -142,6 +121,4 @@ void swr_help(uint8_t ofs)
 			swr_puts(exthelp);
 		}
 	}
-
-
 }
