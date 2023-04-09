@@ -26,7 +26,7 @@ __attribute__((section("CODEHW")))
 //#define SERVICE_REASON_06_BRK 								func
 //#define SERVICE_REASON_07_UNKNOWN_OSBYTE 						func
 //#define SERVICE_REASON_08_UNKNOWN_OSWORD 						func
-//#define SERVICE_REASON_09_HELP								svc_help
+#define SERVICE_REASON_09_HELP									svc_help
 //#define SERVICE_REASON_0A_ABSOLUTE_WORKSPACE_CLAIM 			func
 //#define SERVICE_REASON_0B_NMI_RELEASED 						func
 //#define SERVICE_REASON_0C_NMI_CLAIM 							func
@@ -47,4 +47,3 @@ __attribute__((section("CODEHW")))
 //#define SERVICE_DEFAULT			 							func
 
 #endif // !__ROM_CONFIGURATION_H__
-

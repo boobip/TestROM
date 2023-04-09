@@ -25,8 +25,4 @@ extern struct THeader ROMHeader;
 
 
 
-
-
-extern void OtherROMCall(char rom, void * address, char *a, char *x, char *y);
-
 #endif // !__ROM_H__
