@@ -23,7 +23,11 @@ AFLAGS=
 CSRCS_PATH = \
 src/font.c	\
 src/init.c	\
-src/rom.c	
+src/rom.c	\
+src/hmi.c	\
+src/menu.c	\
+src/swrom.c \
+src/libc/vsprintf.c
 
 CSRCS = $(notdir $(CSRCS_PATH))
 COBJS = $(patsubst %.c,$(BDIR)/%.o,$(CSRCS))
@@ -50,8 +54,6 @@ $(TARGET_PATH): $(COBJS) $(AOBJS)
 	$(CC) -o $@ $(CFLAGS) $(LINKFLAGS) $^
 
 
-$(BDIR)/%.lst: %.c Makefile
-	$(CC) -c -S $(CFLAGS) -o $@ $< 
 
 
 $(BDIR)/%.o: %.s Makefile $(AINCS_PATH)
@@ -98,6 +100,10 @@ $(BDIR)/%.o : %.c $(DEPDIR)/%.d
 		$(COMPILE.c) $(OUTPUT_OPTION) $<
 #		$(COMPILE.c) -o $@ $<
 		$(POSTCOMPILE)
+
+$(BDIR)/%.lst: %.c $(DEPDIR)/%.d Makefile
+	$(CC) -c -S $(CFLAGS) -o $@ $< 
+
 
 $(DEPDIR)/%.d: ;
 .PRECIOUS: $(DEPDIR)/%.d
