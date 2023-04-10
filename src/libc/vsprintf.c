@@ -1,52 +1,22 @@
-#include <mystdio.h>
+//#include <mystdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <stdarg.h>
 
-#include<stdbool.h>
+#include <stdbool.h>
 
 
+typedef void (*pfnputc_t)(char);
 
-#if 0
-static void EmitChar(char c)
+static pfnputc_t outfn_ = 0; // static outfunction saves 200+ bytes of call overhead
+
+static void outfn(char c)
 {
-	_basic_string_p[*_basic_string_len] = c;
-	++*_basic_string_len;
+	outfn_(c);
 }
 
-static void EmitString(const char* s)
-{
-	while (*s != 0)
-	{
-		_basic_string_p[*_basic_string_len] = *(s++);
-		++*_basic_string_len;
-	}
-}
 
-static void EmitLeftPad(uint8_t start, uint8_t width, char padc)
-{
-	uint8_t last = *_basic_string_len;
-	uint8_t e = start + width;
-	if (last >= e) return; // nothing to do
-
-	uint8_t pad = e - last;
-	int8_t len = width - pad;
-
-	for (int8_t i = 1; i <= len; ++i) _basic_string_p[e - i] = _basic_string_p[last - i];// move string over
-	for (uint8_t i = 0; i < pad; i++) _basic_string_p[start + i] = padc; // pad
-
-	*_basic_string_len = e; // set new end
-}
-
-static void EmitRightPad(uint8_t start, uint8_t width, char padc)
-{
-	uint8_t last = *_basic_string_len;
-	uint8_t e = start + width;
-	if (last >= e) return; // nothing to do
-	uint8_t pad = e - last;
-	while (pad--) EmitChar(padc);
-}
-#endif // 0
-
-static inline const char* ReadFormatFlags(const char* fmt, char* pad, uint8_t* width, bool* leftjustify)
+static const char* ReadFormatFlags(const char* fmt, char* pad, uint8_t* width, bool* leftjustify)
 {
 	while (1)
 	{
@@ -91,98 +61,114 @@ static inline const char* ReadFormatFlags(const char* fmt, char* pad, uint8_t* w
 
 
 
-inline const char* FormatPrecision(const char* fmt)
+static const char* FormatPrecision(const char* fmt)
 {
 	// not implemented
 	return fmt;
 }
 
-static inline void RepeatChar(char c, char n, pfnputc_t outfn)
+static void RepeatChar(char c, char n)
 {
-	for (char i = 0; i < n; i++) outfn(c);
-}
-
-
-
-//#define ROM
-
-static inline char* udectoa(uint32_t num)
-{
-#ifdef ROM
-	char*p = _basic_string_p + 0xff;
-	*p = 0;
-	if (!num) *--p = '0';
-	for (; !!num; num /= 10)
-	{
-		--p;
-		char d = num % 10;
-		*p = d + '0';
+	while (n) {
+		outfn(c);
+		n--;
 	}
-	return p;
-#else
-	basic2_cntosudec(); // use BASIC to format it
-	_basic_string_p[*_basic_string_len] = 0;
-	return _basic_string_p;
-#endif // ROM
 }
 
-
-static inline char* idectoa(int32_t num)
+static uint8_t udectoa_count(uint32_t num)
 {
-#ifdef ROM
-	bool neg = (num < 0);
-	if (neg) num = -num;
+	uint8_t c = 0;
 
-	char*p = udectoa(num);
-	if (neg)
-	{
-		--p;
-		*p = '-';
+	do {
+		num /= 10;
+		c++;
+	} while (num);
+
+	return c;
+}
+
+static void udectoa(uint32_t num)
+{
+	if (!num) {
+		outfn('0');
 	}
-	return p;
-#else
-	basic2_cntosdec(); // use BASIC to format it
-	_basic_string_p[*_basic_string_len] = 0;
-	return _basic_string_p;
-#endif // ROM
-}
+	else {
+		bool leading = false;
+		uint32_t t = 1000000000;
 
+		do
+		{
+			uint8_t d = 0;
 
-static inline char* hextoa(uint32_t num)
-{
-#ifdef ROM
-	char*p = _basic_string_p + 0xff;
-	*p = 0;
-	if (!num) *--p = '0';
-	for (; !!num; num >>= 4)
-	{
-		--p;
-		char d = num & 0xf;
-		d += (d > 9) ? 'A' - 10 : '0';
-		*p = d;
+			d = num / t;
+			num %= t;
+
+			if ((d != 0) || leading) {
+				outfn('0' + d);
+				leading = true;
+			}
+
+			t /= 10;
+		} while (t);
 	}
-	return p;
-#else
-	basic2_cntoshex(); // use BASIC to format it
-	_basic_string_p[*_basic_string_len] = 0;
-	return _basic_string_p;
-#endif // ROM
 }
 
 
-int _vsprintf(pfnputc_t outfn, const char * fmt, va_list ap)
-{
 
+
+static uint8_t hextoa_count(uint32_t num)
+{
+	uint8_t c = 0;
+	do {
+		num >>= 4;
+		c++;
+	} while (num);
+
+	return c;
+}
+
+static void hextoa(uint32_t num)
+{
+	if (!num) {
+		outfn('0');
+	}
+	else {
+		bool leading = false;
+		for (uint8_t i = 0; i < 8; i++)
+		{
+			//uint8_t d = (num >> 24);
+			uint8_t d = ((uint8_t*)&num)[3]; // shorter but not good C
+
+			d >>= 4; // want high nibble
+			num <<= 4;
+
+			if ((d != 0) || leading) {
+				char a = d;
+				a += (d > 9) ? 'A' - 10 : '0';
+
+				outfn(a);
+				leading = true;
+			}
+		}
+	}
+}
+
+
+
+
+int _vsprintf(pfnputc_t putc, const char* fmt, va_list ap)
+{
+	outfn_ = putc;
 	int nchar = 0;
 	while (1)
 	{
 		char c = *fmt;
-		if (c == 0) return nchar;
+		if (c == 0) break;
 		++fmt;
-		//if (c == '\r') continue;
+
 		if (c != '%') {
 			outfn(c);
-			//++nchar;
+			++nchar;
 		}
 		else
 		{
@@ -192,6 +178,7 @@ int _vsprintf(pfnputc_t outfn, const char * fmt, va_list ap)
 			bool longint = 0;
 			bool unsignedint = 0;
 			bool upper = 0;
+			uint8_t len = 1;
 
 			// flags
 			fmt = ReadFormatFlags(fmt, &pad, &width, &leftjustify);
@@ -202,27 +189,41 @@ int _vsprintf(pfnputc_t outfn, const char * fmt, va_list ap)
 			// length
 			if (longint = *fmt == 'l') ++fmt;
 
-			const char* pout = _basic_string_p;
-
 			c = *fmt;
-			if (c <= 'Z'&&c >= 'A') {
+			if (c <= 'Z' && c >= 'A') {
 				c += 'a' - 'A'; upper = 1;
 			}
 			++fmt;
 			switch (c)
 			{
 			case 'c':
-				_basic_string_p[0] = va_arg(ap, uint16_t);
-				_basic_string_p[1] = 0;
+				if (width > len && !leftjustify) RepeatChar(' ', width - len);
+				outfn(va_arg(ap, uint16_t));
 				break;
 			case 'u':
 				unsignedint = 1;
 			case 'd':
 			case 'i':
-				if (!longint) *((int32_t*)_basic_reg_inta) = va_arg(ap, int16_t);
-				else *_basic_reg_inta = va_arg(ap, uint32_t);
-				pout = (unsignedint) ? udectoa(*_basic_reg_inta) : idectoa(*_basic_reg_inta);
-				break;
+			{
+				uint32_t val = (longint)
+					? va_arg(ap, uint32_t)
+					: (int32_t)va_arg(ap, int16_t);
+
+				bool neg = false;
+				if (!unsignedint && ((int32_t)val < 0)) {
+					val = -(int32_t)val;
+					neg = true;
+				}
+				len = udectoa_count(val) + (uint8_t)neg; // +1 char for minus symbol if necessary
+
+				if (width > len && !leftjustify) {
+					if (neg && pad == '0') outfn('-');
+					RepeatChar(pad, width - len);
+					if (neg && pad != '0') outfn('-');
+				}
+				udectoa(val);
+			}
+			break;
 
 #if 0
 			case 'e':
@@ -234,55 +235,45 @@ int _vsprintf(pfnputc_t outfn, const char * fmt, va_list ap)
 				continue;
 #endif // 0
 			case 's':
-				pout = va_arg(ap, char*);
-				break;
+			{
+				const char* s = va_arg(ap, char*);
+				int l = strlen(s);
+				len = (l > 255) ? 255 : l; // only support 8 bit padding
+				if (width > len && !leftjustify) RepeatChar(' ', width - len);
+				while (*s) outfn(*s++);
+			}
+			break;
 			case 'p':
 				if (width < 4) width = 4;
 			case 'x':
 			case 'X':
 			{
-				if (!longint) *_basic_reg_inta = va_arg(ap, uint16_t);
-				else *_basic_reg_inta = va_arg(ap, uint32_t);
-				pout = hextoa(*_basic_reg_inta);
-				break;
+				uint32_t val = (longint) ? va_arg(ap, uint32_t) : va_arg(ap, uint16_t);
+				len = hextoa_count(val);
+				if (width > len && !leftjustify) RepeatChar(pad, width - len);
+				hextoa(val);
 			}
+			break;
 
 #if 0
 			case '*':
 			case 'n':
 				/* print nothing*/
-				size_t* p = va_arg(ap, size_t*);
+				size_t * p = va_arg(ap, size_t*);
 				feed pointer the number of chars printed so far
 					continue;
-
 #endif // 0
 			case '%':
 			default:
-				_basic_string_p[0] = c;
-				_basic_string_p[1] = 0;
-				break;
+				outfn(c); // no padding on escaped %%
 			}
 
-			// count length for padding
-			char len = width;
-			for (char i = 0; i < width; i++)
-				if (pout[i] == 0)
-				{
-					len = i;
-					break;
-				}
-
-			// pad left if required
-			if (width > len && !leftjustify) RepeatChar(pad, width - len, outfn);
-
-			// output string
-			while (*pout) outfn(*(pout++));
-
 			// pad right if required
-			if (leftjustify && width > len) RepeatChar(' ', width - len, outfn);
+			if (leftjustify && width > len) RepeatChar(' ', width - len);
+			nchar += (width > len) ? width : len;
 		}
 	}
 
-	//return nchar;
+	return nchar;
 }
 
