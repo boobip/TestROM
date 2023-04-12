@@ -62,12 +62,12 @@ ret:
 
 .MACRO _mov_dword_imm dst, src
 	lda #<(.LOWORD(src))
-	sta seed_
+	sta dst
 	lda #>(.LOWORD(src))
-	sta seed_+1
+	sta dst+1
 	lda #<(.HIWORD(src))
-	sta seed_+2
+	sta dst+2
 	lda #>(.HIWORD(src))
-	sta seed_+3
+	sta dst+3
 .ENDMACRO
 

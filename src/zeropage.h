@@ -4,6 +4,8 @@
 //#define IMPORTZP(type, name) __asm__(".importzp "#name); volatile extern type name;
 #define IMPORTZP(type, name) __asm__(".importzp "#name); extern type name;
 
+#define ZPBSS __attribute__((section("ZPBSS")))
+
 #include <stdint.h>
 
 IMPORTZP(uint8_t, _myzp)

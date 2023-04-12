@@ -245,8 +245,10 @@ rst_handler:
 	lda #init_ula
 	sta serialula
 		
-	_ser_puts "\nBooBip TestROM\n"
+	_ser_puts "\r\nBooBip TestROM\r\n"
 
+	.export init_cls
+init_cls:
 ;; clear screen
 	ldx #0
 	txa
@@ -299,7 +301,7 @@ rst_handler:
 
 ;; test zero page
 
-zpstackloop: ;; TODO: RENAME LATER
+memtest_zp_loop:
 
 ;; checkerboard test
 	ldy #0
@@ -323,12 +325,12 @@ zp_march:
 	lda #$99
 	adc #1			; add in decimal mode will set carry
 	bcc :+
-	jmp zpstackloop ;; seen an error... spin forever
+	jmp memtest_zp_loop ;; seen an error... spin forever
 :	;; decimal mode still clear set so RAM test completed
 
 
 	;; ZP passed the test	
-	_ser_puts ", OK\n"
+	_ser_puts ", OK\r\n"
 	
 	;; DEBUG
 	_back2mos
@@ -344,33 +346,34 @@ seed = $b00b19
 	
 	;; feedback to user
 	
+
+	lda #1
+	sta s_			;; boot mem test start from stack $100
+	sta k_			;; do 1 pass of memory test		
+	
+	lda memsize_
+	sta e_			;; boot mem test do all detected
+	bmi full32KB
+	_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
+	ldx #$16		
+	jmp init_memtest
+full32KB:
+	_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
+	ldx #$32
+	
+	.export init_memtest
+init_memtest:
+
 	lda #8*8
 	sta dst_
 	lda #0
 	sta dst_+1		;; setup text destination
-	
-	lda memsize_
-	sta e_
-	bmi full32KB
-	_ser_puts "16KB detected\nTesting &0100-&3FFF"
-	ldx #$16		
-	jmp run_memtest
-full32KB:
-	_ser_puts "32KB detected\nTesting &0100-&7FFF"
-	ldx #$32
-run_memtest:
 
 	;; print memory size on screen
 	_jsr_zeropage ret1_, zp_phex
 
 	;; show bit positions on screen
 	_zp_puts "KB vv@aaaa 76543210 ee"
-	
-	lda #1
-	sta s_			;; boot mem test start from stack $100
-	sta k_			;; do 1 pass of memory test		
-	lda memsize_
-	sta e_			;; boot mem test do all detected
 		
 	;; do memory test
 	_jsr_zeropage ret_mem_, mem_test
@@ -378,7 +381,7 @@ run_memtest:
 	;; System memory passed the test
 	lda r3_
 	bne rst_handler_2	;; skip printing OK if memory fault
-	_ser_puts ", OK\n"
+	_ser_puts ", OK\r\n"
 
 ;	jmp rst_handler_2
 ;; fall through to reset handler 2
@@ -434,7 +437,8 @@ mem_error:
 	txs				;; stash ret/pat in S
 	
 	tax				;; stash rval/pattern in X
-	_ser_putc $a
+	_ser_putc $d	;; CR
+	_ser_putc $d	;; LF
 	_ser_phex txa	;; serial out what was read
 	
 	_ser_putc '@'

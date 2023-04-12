@@ -291,7 +291,7 @@ loop:
 :	jmp loop	;; too far for branch so JMP
 :	inc p_+1
 	dex
-	beq :--
+	bne :--
 .ENDMACRO
 
 ;;=====================================
@@ -318,11 +318,11 @@ mem_test:
 mem_test_loop:
 	;; checkerboard memory test
 	_checkboard_fill $55
-	_pause_ms 1
+	_pause_ms 10
 	_checkboard_check $55
 
 	_checkboard_fill $aa
-	_pause_ms 1
+	_pause_ms 10
 	_checkboard_check $aa
 
 	;; random memory test (probes address errors)
@@ -370,6 +370,7 @@ mem_error:
 	lda #0
 	sta dst_+1
 
+	_ser_putc $d	;; send carriage return
 	_ser_putc $a	;; send line feed
 	
 	ldx r0_			;; send read value
@@ -385,7 +386,7 @@ mem_error:
 	_jsr_zeropage ret1_, zp_phex
 	_jsr_zeropage ret_leaf_, zp_ser_phex
 		
-	ldx p_			;; send address of failure LO
+	ldx sy_			;; send address of failure LO
 	_jsr_zeropage ret1_, zp_phex
 	_jsr_zeropage ret_leaf_, zp_ser_phex
 

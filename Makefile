@@ -27,6 +27,7 @@ src/rom.c	\
 src/hmi.c	\
 src/menu.c	\
 src/swrom.c \
+src/main.c  \
 src/libc/vsprintf.c
 
 CSRCS = $(notdir $(CSRCS_PATH))
