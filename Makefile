@@ -28,6 +28,7 @@ src/hmi.c	\
 src/menu.c	\
 src/swrom.c \
 src/main.c  \
+src/keyboard.c \
 src/hardware.c \
 src/libc/vsprintf.c
 

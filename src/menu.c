@@ -86,10 +86,6 @@ const char* menu_text[] = {
 };
 #undef MENUITEM
 
-static const char* menu_titles[] = {
-	"Main","RAM","Video","VIA"
-};
-
 
 //
 // Menu state variables
@@ -232,7 +228,3 @@ uint8_t cmd_memtest_sys(const char* help, uint8_t arg, uint8_t menu)
 	__builtin_unreachable();
 }
 
-uint8_t cmd_memtest_kbd(const char* help, uint8_t arg, uint8_t menu)
-{
-
-}
