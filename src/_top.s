@@ -13,11 +13,13 @@
 	.importzp _sa, _sx, _sy
 	.segment "CODETOP"
 
-.define nopnum  16
+.define nopnum  4
 
 .REPEAT nopnum,I
-	.export .ident(.concat("nopslide",.string(nopnum-I)))
-.ident(.concat("nopslide",.string(nopnum-I))):
+	.export .ident(.concat("nopdelayus_",.string(6+nopnum-I)))
+.ident(.concat("nopdelayus_",.string(6+nopnum-I))):
 	nop
 .ENDREP
+	.export nopdelayus_6
+nopdelayus_6:
 	rts

@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 
-#define REG(write,read) 	union { uint8_t write; /*const*/ uint8_t read; }
+#define REG(write,read) 	union { uint8_t write; const uint8_t read; }
 
 
 typedef struct {
@@ -86,6 +86,44 @@ typedef struct {
 
 
 static volatile sheila_t* const sheila = (sheila_t* const)0xfe00U;
+
+// use to prevent compiler emitting "lda #ofs, tay, sta $nnnn,7" instead of sta $mmmm
+static inline void outb(volatile uint8_t* const p, uint8_t val) { *p = val; }
+static inline uint8_t inb(volatile const uint8_t* const p) { return *p; }
+
+
+
+//
+// globally useful helper functions
+typedef enum {
+	SB_SN76489, SB_TMS5520_RS, SB_TMS5520_WS,
+	SB_KEYBEN_N, SB_C0, SB_C1, SB_KEYBLED1, SB_KEYBLED0
+} slowbusdev_t;
+
+static inline void slowbus1(slowbusdev_t dev) {
+	//	sheila->system_via.orb = (dev & 0xf) | 8;
+	outb(&sheila->system_via.orb, (dev & 0xf) | 8);
+}
+static inline void slowbus0(slowbusdev_t dev) {
+	outb(&sheila->system_via.orb, (dev & 0xf));
+}
+static inline void slowbusdirection(uint8_t mask) {
+	outb(&sheila->system_via.ddra, mask); // set inputs/outputs
+}
+static inline void slowbuswrite(uint8_t data) {
+	outb(&sheila->system_via.ora, data);
+}
+static inline uint8_t slowbusread() {
+	return inb(&sheila->system_via.ira);
+}
+
+void slowbus_sn76489_write(uint8_t data);
+
+
+//
+// misc helpers
+#define NOPDELAY(us) __asm__ __volatile__("jsr nopdelayus_" #us)
+
 
 
 #endif // !__HARDWARE_H__

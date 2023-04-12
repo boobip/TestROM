@@ -27,8 +27,8 @@ vtable_t _vtable = {
 	irq_handler
 };
 
-static uint32_t irqcount = 0;
-static uint32_t nmicount = 0;
+ZPBSS static uint32_t irqcount_ = 0;
+ZPBSS static uint32_t nmicount_ = 0;
 
 static void init_bss(void);
 static void init_data(void);
@@ -42,7 +42,7 @@ static void init_uservia(void);
 
 __attribute__((naked))
 void nmi_handler(void) {
-	++nmicount;
+	++nmicount_;
 	__asm__("rti");
 }
 
@@ -53,12 +53,12 @@ void irq_handler(void) {
 
 	if (sheila->system_via.ifr & 2) {
 		volatile uint8_t* const p = (uint8_t*)0x1a01;
-		*p +=1; // trample some RAM
+		*p += 1; // trample some RAM
 
 	}
 	sheila->system_via.ifr = 0x7f; // clear all interrupts?
 
-//	++irqcount;
+	//	++irqcount_;
 	__asm__("pla\ntax\npla\ntay\npla");
 	__asm__("rti");
 }
@@ -74,9 +74,10 @@ void rst_handler_3(void) {
 	init_data();
 
 	init_display();
+	init_sysvia();
+
 	init_sound();
 
-	init_sysvia();
 
 	main();
 	__builtin_unreachable();
@@ -104,48 +105,32 @@ void init_data(void)
 
 void init_display(void) {
 	set_screenstart(0x1800U);
-
-	set_disp(10, 10);
-	putc_vdu('A' | 0x80);
-	puts_vdu("Hello World\n");
-
-	set_disp(0, 0);
-	puts_vdu("Welcome!");
 }
 
 void init_sound(void) {
-	sheila->system_via.ddra = 0xff; // all outputs
-	sheila->system_via.ddrb = 0x0f; // bits 0-3 outputs
-
-	sheila->system_via.ora = 0x0; // 
-
-	for (char i = 0; i < 8; i++)
+	// silence all channels
+	for (char c = 0; c < 4; c++)
 	{
-		sheila->system_via.orb = i | 8; // set all things on slow bus select to 1
+		uint8_t vol = ((2 * c + 1) << 4) | 0x80 | 0xf; // volume to zero
+		slowbus_sn76489_write(vol);
 	}
-
-
-	for (char i = 0; i < 4; i++)
-	{
-		sheila->system_via.ora = ((2 * i + 1) << 4) | 0x80 | 0xf; // volume to zero
-		sheila->system_via.orb = 0x00; // 
-		__asm__ __volatile__("jsr nopslide8");
-		sheila->system_via.orb = 0x08; // 
-		__asm__ __volatile__("jsr nopslide8");
-
-	}
-
-
-
-
 }
 
 
 void init_sysvia(void)
 {
-	sheila->system_via.pcr = 0;
-	sheila->system_via.ier = 0x7f; // disable all interrupts
-	sheila->system_via.ier = 0x80 | 2; // enable CA1 interrupt VSYNC
+	// set up slow bus
+	outb(&sheila->system_via.ddra, 0xff); // all outputs
+	outb(&sheila->system_via.ddrb, 0x0f); // bits 0-3 outputs
+	outb(&sheila->system_via.ora, 0x0); // 
+
+	for (char i = 0; i < 8; i++) slowbus1(i); // set all things on slow bus to 1
+
+
+
+	outb(&sheila->system_via.pcr, 0x05); // posedge interrupt on CA1 & CA2
+	outb(&sheila->system_via.ier, 0x7f); // disable all interrupts
+	outb(&sheila->system_via.ier, 0x80 | 2); // enable CA1 interrupt VSYNC
 	__asm__("cli"); // bodge interrupts back on
 }
 void init_uservia(void)

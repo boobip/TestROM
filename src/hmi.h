@@ -13,10 +13,10 @@ static char* const screen_start_ = (char* const)0x1800;
 static inline void set_screenstart(uint16_t p)
 {
 	p >>= 3;
-	sheila->crtc.addr = 12; // high order 6 bitd
-	sheila->crtc.reg = p >> 8;
-	sheila->crtc.addr = 13; // low order 8 bits
-	sheila->crtc.reg = p & 0xff;
+	outb(&sheila->crtc.addr, 12); // high order 6 bitd
+	outb(&sheila->crtc.reg, p >> 8);
+	outb(&sheila->crtc.addr, 13); // low order 8 bits
+	outb(&sheila->crtc.reg, p & 0xff);
 }
 
 static inline void set_disp(uint8_t x, uint8_t y)
@@ -29,8 +29,8 @@ extern void putc_vdu(char c);
 extern void puts_vdu(const char* msg);
 
 static inline void putc_ser(char c) {
-	while (!(sheila->acia.status & 10));
-	sheila->acia.txb = c;
+	while (!(inb(&sheila->acia.status) & 10));
+	outb(&sheila->acia.txb, c);
 }
 extern void puts_ser(const char* msg);
 
@@ -50,12 +50,12 @@ static inline void cls(void) {
 }
 
 // input functions
-static inline char ser_isrxfull(void) { return sheila->acia.status & 1; }
-static inline char ser_get(void) { return sheila->acia.rxb; }
-static inline char ser_getch(void) { 
-	while (!(sheila->acia.status & 1));
+static inline char ser_isrxfull(void) { return inb(&sheila->acia.status) & 1; }
+static inline char ser_get(void) { return inb(&sheila->acia.rxb); }
+static inline char ser_getch(void) {
+	while (!(inb(&sheila->acia.status) & 1));
 
-	return sheila->acia.rxb;
+	return inb(&sheila->acia.rxb);
 }
 
 
