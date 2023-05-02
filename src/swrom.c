@@ -6,7 +6,8 @@
 #include "ROM.h"
 
 
-static const char** const _os_zp_commandpointer = (const char**)0xf2;
+
+
 
 #define SECTION(x) __attribute__((section(x)))
 #define INIT_STACK(x) __asm__ volatile ( "lda #>" x "\nsta _sp1\nlda #<" x "\nsta _sp0\n" : : : "a" )
@@ -15,6 +16,7 @@ static const char** const _os_zp_commandpointer = (const char**)0xf2;
 #define DEFSTRING(n) SECTION("RODATAHW")  const char n[]
 
 DEFSTRING(myhelp) = "TESTROM";
+
 DEFSTRING(exthelp) = "\
   This ROM must be inserted in the\r  OS ROM socket (IC 51).\r\
   Visit www.boobip.com for more\r  information.\r";
@@ -30,36 +32,20 @@ static void osnewl() {
 }
 
 SECTION("CODEHW")
-static int strncmp(const char* s1, const char* s2, size_t n)
-{
-	unsigned int i;
-
-	for (i = 0; i < n && (*s1 || *s2); i++, s1++, s2++)
-	{
-		int diff;
-
-		if (!*s1 || !*s2)
-			return *(unsigned char*)s1 - *(unsigned const char*)s2;
-
-		diff = *s1 - *s2;
-		if (diff != 0)
-			return diff;
-	}
-
-	return 0;
+static inline uint8_t getcommandchar(uint8_t ofs) {
+	uint8_t r;
+	__asm__("lda ($f2),y" : "=Aq"(r) : "yq"(ofs));
+	return r;
 }
 
 
-
 SECTION("CODEHW")
-static void swr_putc(char c)
-{
+static void swr_putc(char c) {
 	osasci(c);
 }
 
 SECTION("CODEHW")
-static void swr_puts(const char* s)
-{
+static void swr_puts(const char* s) {
 	while (*s) swr_putc(*s++);
 }
 
@@ -80,40 +66,37 @@ static void title(void)
 SECTION("CODEHW")
 void swr_help(uint8_t ofs)
 {
-	const char* p = *_os_zp_commandpointer;
-	p += ofs;
+	char a = getcommandchar(ofs);
 
-	if (*p == 0xd) {
+	if (a == 0xd) {
 		title();
+		swr_putc(' ');
 		swr_putc(' ');
 		swr_puts(myhelp);
 		osnewl();
 	}
 	else {
 		bool found = false;
+		char i = ofs;
 
 		while (1)
 		{
-			char c = *p;
+			char j = 0;
+			char a, b, u;
+			do {
+				a = getcommandchar(i++);
+				u = a & 0xdf;// get char as upper case
+				b = myhelp[j++];
+			} while (b && u == b);
 
-			if (c == 0xd) break;
-			if (c == '.') {
+			if (((b != 0) && (a == '.')) || ((b == 0) && (a <= 32)))
+			{
 				found = true;
 				break;
 			}
 
-			if (c == *myhelp) {
-				uint8_t len = sizeof(myhelp) - 1;
-				int r = strncmp(myhelp, p, len);
-				char e = p[len];
-				if (r == 0 && (e == 0xd || e == ' ')) {
-					found = true;
-					break;
-				}
-			}
-
-			while (!(*p == ' ' || *p == 0xd)) p++; // no match, eat token
-			++p;
+			while (a > ' ') a = getcommandchar(i++); // skip to next token
+			if (a == 0xd) break;
 		}
 
 		if (found) {
