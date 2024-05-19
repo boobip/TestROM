@@ -58,7 +58,7 @@ ret:
 	sta dst+2
 	lda src+3
 	sta dst+3
-.ENDMACRO	
+.ENDMACRO
 
 .MACRO _mov_dword_imm dst, src
 	lda #<(.LOWORD(src))
@@ -70,4 +70,48 @@ ret:
 	lda #>(.HIWORD(src))
 	sta dst+3
 .ENDMACRO
+
+;;
+;;  HEX -> ASCII (decimal mode)
+
+.MACRO _hex2ascii_dec_hi
+  lsr
+  lsr
+  lsr
+  lsr
+  cmp #9+1
+  adc #$30
+.ENDMACRO
+
+.MACRO _hex2ascii_dec_lo
+  and #$0F
+  cmp #9+1
+  adc #$30
+.ENDMACRO
+
+.MACRO _hex2ascii_bin_hi
+	lsr
+	lsr
+	lsr
+	lsr
+	cmp #$0A
+	bcc :+
+	adc #$06
+:
+	adc #$30
+.ENDMACRO
+
+.MACRO _hex2ascii_bin_lo
+	and #$0F
+	cmp #$0A
+	bcc :+
+	adc #$06
+:
+	adc #$30
+.ENDMACRO
+
+
+
+
+
 

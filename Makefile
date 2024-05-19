@@ -60,8 +60,8 @@ $(TARGET_PATH): $(COBJS) $(AOBJS)
 
 
 $(BDIR)/%.o: %.s Makefile $(AINCS_PATH)
-	$(AS) $(AFLAGS) -o $@ $< 
-#	$(AS) $(AFLAGS) -o $@ -l $(@:.o=.lst) $< 
+#	$(AS) $(AFLAGS) -o $@ $< 
+	$(AS) $(AFLAGS) -o $@ -l $(@:.o=.lst) $< 
 
 
 .PHONY: asm
@@ -98,14 +98,15 @@ DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
 COMPILE.c = $(CC) $(DEPFLAGS) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c
 POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 
+$(BDIR)/%.lst: %.c $(DEPDIR)/%.d Makefile
+	$(CC) -c -S $(CFLAGS) -o $@ $< 
+
 $(BDIR)/%.o : %.c
 $(BDIR)/%.o : %.c $(DEPDIR)/%.d
 		$(COMPILE.c) $(OUTPUT_OPTION) $<
 #		$(COMPILE.c) -o $@ $<
 		$(POSTCOMPILE)
 
-$(BDIR)/%.lst: %.c $(DEPDIR)/%.d Makefile
-	$(CC) -c -S $(CFLAGS) -o $@ $< 
 
 
 $(DEPDIR)/%.d: ;

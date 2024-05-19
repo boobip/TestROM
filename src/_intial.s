@@ -18,7 +18,12 @@
 	.include "_helpers.inc"
 	.include "_serial.inc"
 	.include "_hardware.inc"
-	
+	.include "_noram.inc"
+
+;;=======================================
+
+.PUSHSEG
+.RODATA
 mode4_ula = $88
 mode4_palette:
 .byte $07,$17,$27,$37,$47,$57,$67,$77,$80,$90,$a0,$b0,$c0,$d0,$e0,$f0
@@ -26,7 +31,7 @@ mode4_crtc:
 .byte $3f,$28,$31,$24,$26,$00,$20,$22,$01,$07,$67,$08
 .byte >(screen_start),<(screen_start),$00,$00
 screen_start=0;$5800/8
-
+.POPSEG
 
 ;;MODE(s) 	Palette register writes (hex)
 ;;0, 3, 4, 6 	80 90 A0 B0 C0 D0 E0 F0 07 17 27 37 47 57 67 77
@@ -39,7 +44,7 @@ screen_start=0;$5800/8
 	ldx #256-.strlen(msg)
 :	lda msgbuf-256+.strlen(msg),x
 	sta r2_
-	_jsr_zeropage ret_leaf_, zp_putc 
+	_jsr_zeropage ret_leaf_, zp_putc
 	inx
 	bne :-
 	beq :+
@@ -54,6 +59,7 @@ msgbuf: .byte msg
 ;;
 
 baud = 76800
+;;baud = 9600
 
 ; 9600 baud settings
 .IF baud=9600
@@ -80,41 +86,73 @@ back2moslow:
 	sta $ff00
 	lda #127
 	sta $fe4e
-;	lda #200
-;	ldx #3
-;	ldy #0
-;	jsr $fff4
 	jmp ($fffc)
-back2moslowend:	
+back2moslowend:
 
 .MACRO _back2mos
-	sei
-	ldx #0
+	ldx #(back2moslowend-back2moslow)
 :	lda back2moslow,X
 	sta back2moslow_dst,x
-	inx
-	cpx #(back2moslowend-back2moslow)
-	bne :-
+	dex
+	bpl :-
 	ldx #<back2moslow_dst
 	stx $fffc
 	ldx #>back2moslow_dst
 	stx $fffd
 .ENDMACRO
-;
 
+	.segment "STRINGS"
+	strings_start:
+	.CODE
+
+.MACRO _nomem_ser_puts str
+	.local ptr,relptr
+	.PUSHSEG
+	.segment "STRINGS"
+	ptr: .byte str,0
+	.POPSEG
+	relptr = ptr-strings_start
+
+	ldx #(relptr)
+	_nomem_call_sparse nomem_ser_puts, nomem_ser_puts_count, (relptr+.strlen(str))
+
+.ENDMACRO
+
+.MACRO _nomem_ser_putc
+	_nomem_call nomem_ser_putc, nomem_ser_putc_count
+.ENDMACRO
+
+.MACRO _nomem_putc col
+	ldx #(col*8)
+	_nomem_call_sparse nomem_putc, nomem_putc_count, (col*8+8)
+.ENDMACRO
+
+.MACRO _nomem_putc_label col, char
+	ldx #(col*8)
+	ldy #(char-'@')*8
+	_nomem_call_sparse nomem_putc_lab, nomem_putc_lab_count, (col*8+8)
+.ENDMACRO
 
 
 ;;=====================================
 ;; ZP memory test macros & defines
 ;;
 
-.define mem_error_num  28
-
-.MACRO _mem_error n, pattern
-	ldx #n
-	jmp mem_error
-	.ident(.concat("zpmem_ret",.string(n))):
-	.ident(.concat("MEMERRPAT",.string(n))) = pattern
+.MACRO _mem_error inv
+	.IFNDEF mem_error_count
+		mem_error_count .set 0
+	.ENDIF
+	.IFNDEF mem_error_inv_count
+		mem_error_inv_count .set 0
+	.ENDIF
+	txs								;; stash pattern in S
+	.IFNBLANK inv
+		ldx #(mem_error_inv_count*8+4)	;; return point with inverse pattern
+		_nomem_call_sparse mem_error_inv, mem_error_inv_count, (mem_error_inv_count*8+4)
+	.ELSE
+		ldx #(mem_error_count*8)	;; return point without inverse pattern
+		_nomem_call_sparse mem_error, mem_error_count, (mem_error_count*8)
+	.ENDIF
 .ENDMACRO
 
 .MACRO _checkboard_fill pattern
@@ -125,63 +163,60 @@ back2moslowend:
 	bne :-
 .ENDMACRO
 
-.MACRO _checkboard_check pattern, l1, l2
+.MACRO _checkboard_check pattern
 :	lda $00,Y
 	cmp #pattern
 	beq :+
-	_mem_error l1, pattern
+	.IF pattern=$55
+		_mem_error 
+	.ELSE
+		_mem_error inv
+	.ENDIF
 :	iny
 	lda $00,Y
-	cmp #pattern ^ $ff
+	cmp #pattern^$ff
 	beq :+
-	_mem_error l2, pattern^$ff
+	.IF pattern=$55
+		_mem_error inv
+	.ELSE
+		_mem_error
+	.ENDIF
 :	iny
 	bne :---
 .ENDMACRO
 
-.MACRO _march_fill pattern
-	lda #pattern
-:	sta $00,Y
-	iny
-	bne :-
-.ENDMACRO
 
-
-.MACRO _march_check pattern, l1
-:	lda $00,Y
-	cmp #pattern
-	beq :+
-	_mem_error l1, pattern
-:	iny
-	bne :--
-.ENDMACRO
 
 ;; march C- extended
 ;; ↕(w0); ↑(r0,w1,r1); ↑(r1,w0);
 ;; ↓(r0,w1); ↓(r1,w0); ↕(r0)
-.MACRO _march_cminus_extended pattern, l1
-	_march_fill pattern
+.MACRO _march_cminus_extended
+;; ↕(w0);
+	lda pattern,X
+:	sta $00,Y
+	iny
+	bne :-
 
 ;; ↑(r0,w1,r1);
 :	lda $00,Y
-	cmp #pattern
+	cmp pattern,X
 	beq :+
-	_mem_error (0+l1), pattern
-:	lda #pattern^$ff
+	_mem_error
+:	lda patterninv,X
 	sta $00,Y
 	lda $00,Y
-	cmp #pattern^$ff
+	cmp patterninv,X
 	beq :+
-	_mem_error (1+l1), pattern^$ff
+	_mem_error inv
 :	iny
 	bne :---
 
 ;; ↑(r1,w0);
 :	lda $00,Y
-	cmp #pattern^$ff
+	cmp patterninv,X
 	beq :+
-	_mem_error (2+l1), pattern^$ff
-:	lda #pattern
+	_mem_error inv
+:	lda pattern,X
 	sta $00,Y
 	iny
 	bne :--
@@ -189,10 +224,10 @@ back2moslowend:
 ;; ↓(r0,w1);
 :	dey
 	lda $00,Y
-	cmp #pattern
+	cmp pattern,X
 	beq :+
-	_mem_error (3+l1), pattern
-:	lda #pattern^$ff
+	_mem_error
+:	lda patterninv,X
 	sta $00,Y
 	tya		;; Z = (y==0)
 	bne :--
@@ -200,16 +235,21 @@ back2moslowend:
 ;; ↓(r1,w0);
 :	dey
 	lda $00,Y
-	cmp #pattern^$ff
+	cmp patterninv,X
 	beq :+
-	_mem_error (4+l1), pattern^$ff
-:	lda #pattern
+	_mem_error inv
+:	lda pattern,X
 	sta $00,Y
 	tya		;; Z = (y==0)
 	bne :--
 
 ;; ↕(r0)
-	_march_check pattern, (5+l1)
+:	lda $00,Y
+	cmp pattern,X
+	beq :+
+	_mem_error
+:	iny
+	bne :--
 .ENDMACRO
 
 ;;=====================================
@@ -217,35 +257,40 @@ back2moslowend:
 ;; assume no memory works, no JSR
 ;;
 
+.MACRO _withlabel
+: NOP
+.ENDMacro
+
 	.export rst_handler
 rst_handler:
 	sei
 	cld
 
-;; setup video, mode 4
+;; setup video, mode 4 & leave CRTC addr on R15
 	lda #mode4_ula
 	sta video_ula
-	ldx #15
-:	lda mode4_palette,X
-	sta video_ula_palette
-	dex
-	bpl :-
 	ldx #15
 :	lda mode4_crtc,X
 	stx video_crtc_addr
 	sta video_crtc_data
+	lda mode4_palette,X
+	sta video_ula_palette
 	dex
 	bpl :-
 
 ;; now in mode 4
+
+;; reset serial chip
+	lda #init_acia|3	; CR0 & CR1 1 for master reset
+	sta acia
 
 ;; initialise serial 9600
 	lda #init_acia
 	sta acia
 	lda #init_ula
 	sta serialula
-		
-	_ser_puts "\r\nBooBip TestROM\r\n"
+
+	_nomem_ser_puts "\r\nBooBip TestROM\r\n"
 
 	.export init_cls
 init_cls:
@@ -295,31 +340,49 @@ init_cls:
 	inx
 	bne :-
 
-;; 
-	_ser_puts "Test zero page"
+;;
+	_nomem_ser_puts "Test zero page"
 
+	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
+;	_back2mos
+;	sed ; set memory error, loop forever
 
 ;; test zero page
+.RODATA
+	pattern:
+	.byte $55, $0F, $33, $0
+	patterninv:
+	.byte $AA, $F0, $CC, $FF
+.CODE
 
 memtest_zp_loop:
 
-;; checkerboard test
+	lda #15
+	sta video_crtc_addr ; leave crtc address on R15 (8 bit)
+
+	;; checkerboard test 55, AA
 	ldy #0
+	ldx #0
 zp_check:
 	_checkboard_fill $55
 	_pause_ms 10
-	_checkboard_check $55, 0, 1
-
+	_checkboard_check $55
+	
 	_checkboard_fill $AA
 	_pause_ms 10
-	_checkboard_check $AA, 2, 3
+	_checkboard_check $AA
 
 	;; march test 00,0F,33,55
+	ldx #0
+	ldy #0
 zp_march:
-	_march_cminus_extended $55, 4
-	_march_cminus_extended $0f, 10
-	_march_cminus_extended $33, 16
-	_march_cminus_extended $00, 22
+	_march_cminus_extended
+
+	inx
+	cpx #4
+	beq :+
+	jmp zp_march
+:
 
 	;; check if D flag is set
 	lda #$99
@@ -329,38 +392,38 @@ zp_march:
 :	;; decimal mode still clear set so RAM test completed
 
 
-	;; ZP passed the test	
-	_ser_puts ", OK\r\n"
-	
-	;; DEBUG
+	;; ZP passed the test
+	_nomem_ser_puts ", OK\r\n" ;; We have memory now - shorter/better puts?
+
+	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
 	_back2mos
 
 seed = $b00b19
 	_mov_dword_imm seed_, seed
-	
+
 ;; check for 16/32KB by memory alias
 	lda #$80
 	sta memsize_
 	lsr
 	sta a:memsize_ + $4000
-	
+
 	;; feedback to user
-	
+
 
 	lda #1
 	sta s_			;; boot mem test start from stack $100
-	sta k_			;; do 1 pass of memory test		
-	
+	sta k_			;; do 1 pass of memory test
+
 	lda memsize_
 	sta e_			;; boot mem test do all detected
 	bmi full32KB
-	_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
-	ldx #$16		
+	_nomem_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
+	ldx #$16
 	jmp init_memtest
 full32KB:
-	_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
+	_nomem_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
 	ldx #$32
-	
+
 	.export init_memtest
 init_memtest:
 
@@ -373,19 +436,19 @@ init_memtest:
 	_jsr_zeropage ret1_, zp_phex
 
 	;; show bit positions on screen
-	_zp_puts "KB vv@aaaa 76543210 ee"
-		
+	_zp_puts "KB mm@aaaa 76543210 ee"
+
 	;; do memory test
 	_jsr_zeropage ret_mem_, mem_test
 
 	;; System memory passed the test
 	lda r3_
 	bne rst_handler_2	;; skip printing OK if memory fault
-	_ser_puts ", OK\r\n"
+	_nomem_ser_puts ", OK\r\n"
 
 ;	jmp rst_handler_2
 ;; fall through to reset handler 2
-	
+
 ;;=====================================
 ;; follow on reset handler
 ;; ZP & stack tested OK
@@ -396,21 +459,21 @@ rst_handler_2:
 	cld
 	ldx #$ff
 	txs		; intialise stack pointer
-	
+
 
 	lda #<__STACKTOP__
 	sta _sp0			;; intialise C soft stack
 	lda #>__STACKTOP__
 	sta _sp1
-	
+
 
 ;	// cleanup Zero Page
 ;	lda #0
 ;	ldx #$50
 ;:	sta &00,X
 ;	inx
-;	bne :-	
-	
+;	bne :-
+
 ;:	jmp :- ;; spin wait for RESET
 
 	jmp rst_handler_3 ;; go to C code
@@ -420,9 +483,9 @@ rst_handler_2:
 ;; Zero page memory test error handler
 ;; Entry:
 ;;	A - memory value
-;;	X - return point/pattern
+;;	X - return point
 ;;	Y - ZP address
-;;	
+;;	S - pattern index
 ;;
 
 err_row = 5
@@ -433,114 +496,249 @@ font_zero_p = font+8*('0'-' ')
 ; regs... a, x, y, s
 
 mem_error:
-	cld				;; decimal mode messes with phex
-	txs				;; stash ret/pat in S
-	
-	tax				;; stash rval/pattern in X
-	_ser_putc $d	;; CR
-	_ser_putc $d	;; LF
-	_ser_phex txa	;; serial out what was read
-	
-	_ser_putc '@'
-	_ser_putc '0'
-	_ser_putc '0'
-	_ser_phex tya			;; send address of failure
+mem_error_inv:
+	cld ;; decimal flag messes with serial timeout
+	sty video_crtc_data ;; stash mem address in crtc
 
-	_ser_putc ' '
-	_ser_putc '('
-	
-	txa					;; restore read value to A
-	tsx					;; mov ret/pat to X
-	eor mem_patterns,X	;; make bitmask for bad bits
-	tax
+	ldy #14
+	sty video_crtc_addr
 
-.REPEAT 8, I
-	txa
-	asl a
-	tax					;; stash bad bits
-	bcs :+
-	;; not in error
-	_ser_putc '0'+7-I
-	bne :++				;; always true
-:
-	.REPEAT 8, J
-		LDA font+8*('X'-' ')+J
-		STA screen_ofs+8*(40+I)+J
-	.ENDREP
-	_ser_putc 'X'
-:	
-.ENDREP
+	stx video_crtc_data ;; stash return point in crtc
 
-	_ser_puts ") expected "
+	;; add index to stashed return point to combine
 	tsx
-	lda mem_patterns,x
-	tax
-	_ser_phex txa
-
-;; print last error address on screen
-	tya
-	lsr a
-	lsr a
-	lsr a
-	lsr a
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	asl		; mul 8 to get font char offset
-	asl
-	asl
-	tax		
-.REPEAT 8, J
-	lda font_zero_p+J, X
-	sta screen_ofs+8*(40+10)+J
-.ENDREP
-	tya
-	and #$0F
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	asl		; mul 8 to get font char offset
-	asl
-	asl
-	tax
-.REPEAT 8, J
-	lda font_zero_p+J,X
-	sta screen_ofs+8*(40+11)+J
-.ENDREP
-
-;; init bit positions on screen
-	ldx #0
-:
-.REPEAT 8, I
-	lda font_zero_p+8*(7-I),x
-	sta screen_ofs+8*I,x
-.ENDREP
-	inx
-	cpx #8
+:	dex
+	bmi :+
+	inc video_crtc_data
 	bne :-
-
-	tsx		;; pattern index back in X, address still in Y continue mem test
-	sed		; flag error
-
-;; return to correct point in memory test
-.REPEAT mem_error_num-1, I
-	cpx #I
-	bne :+
-	jmp .ident(.concat("zpmem_ret",.string(I)))
 :
+	iny
+	sty video_crtc_addr	;; back to crtc R15
+
+	;; A = read value
+	tax
+	txs ;; stash in S
+
+	;;
+	;; serial/screen out what was read
+	_hex2ascii_bin_hi	;; high char->A
+	tay
+	_nomem_ser_puts "\r\n"
+	_nomem_ser_putc
+
+	;; write to screen
+	_nomem_putc 14 ;; HACK: fix layout move stuff around later
+
+	tsx
+	txa
+	_hex2ascii_bin_lo	;; low char->A
+	tay
+	_nomem_ser_putc
+
+	;; write to screen
+	_nomem_putc 15
+
+	;;
+	;; serial/screen out address
+	lda video_crtc_data
+	_hex2ascii_bin_hi	;; high char->A
+	tay
+	_nomem_ser_puts " @ 00"	;; address prefix
+	_nomem_ser_putc
+
+	;; write to screen
+	_nomem_putc 10
+
+	lda video_crtc_data
+	_hex2ascii_bin_lo	;; low char->A
+	tay
+	_nomem_ser_putc
+
+	;; write to screen
+	_nomem_putc 11
+
+	_nomem_ser_puts " ("	;; open bit errors
+
+	;;
+	;; fetch pattern index from CRTC & lookup pattern
+	ldy #14
+	sty video_crtc_addr
+	lda video_crtc_data
+
+	and #7
+	tay
+
+	;;
+	;; display error bit mask
+	tsx					;; restore read value
+	txa
+	eor pattern,y		;; make bitmask for bad bits
+	
+	ldx #'7'
+	txs					;; stash bit number in S
+
+	sec
+	rol a				;; get 1st bit & rol in a 1 for loop counting
+biterror:
+	tay 				;; stash bitmask in Y
+	tsx
+	txa					;; bit posn char -> A
+	bcc @next			;; branch taken when not in error
+	
+	;; bit in error, display on screen
+	eor #$ff
+	adc #'7'			;; carry set here
+	asl
+	asl
+	asl
+	tax					;; screen offset in X
+
+	;; hard coded X
+	lda #$66
+	sta screen_ofs+8*40+0,X
+	sta screen_ofs+8*40+1,X
+	sta screen_ofs+8*40+5,X
+	sta screen_ofs+8*40+6,X
+	lda #$3c
+	sta screen_ofs+8*40+2,X
+	sta screen_ofs+8*40+4,X
+	lda #$18
+	sta screen_ofs+8*40+3,X
+	lda #0
+	sta screen_ofs+8*40+7,X
+
+	ldx #'X'
+@next:
+	_tx_wait_timeout
+	stx acia_d 			;; push bit posn or X for bad bit to serial
+	pha					;; decrement S
+	tya
+	asl a				;; shift right, once zero R13 zero again - OK
+	bne biterror
+	
+	_nomem_ser_puts ") pat: "	;; close bit error braces
+	
+	;;
+	;; fetch pattern index from CRTC & lookup pattern
+	lda video_crtc_data
+
+	and #7
+	tay
+	ldx pattern,y
+	txs
+	
+	;;
+	;; serial/screen out pattern
+	txa
+	_hex2ascii_bin_hi	;; high char->A
+	tay
+	_nomem_ser_putc
+
+	;; write to screen
+	_nomem_putc 18
+
+	tsx
+	txa
+	_hex2ascii_bin_lo	;; low char->A
+	tay
+	_nomem_ser_putc
+
+	;; write to screen
+	_nomem_putc 19
+
+	_nomem_putc_label 10,'A'
+	_nomem_putc_label 14,'M'
+	_nomem_putc_label 18,'P'
+	
+	;;
+	;; init bit positions on screen
+	
+	ldx #7*8			;; start at font char '7'
+	txs
+	ldy #0
+
+:	tsx
+:	lda font_zero_p,X
+	sta screen_ofs,Y
+	pha					;; decrement S
+	inx
+	iny
+	tya
+	and #7				;; finished this char?
+	bne :-
+	cpy #64				;; finshed 8 chars?
+	bne :--
+	
+
+	; restore pattern index to X, mem address to Y and jump point to A
+	lda video_crtc_data ; load pattern index & return jump point
+
+	tay
+	and #3			;; mask off pattern index
+	tax
+	tya		
+	and #$3C		;; return jump point in A
+
+	ldy #15
+	sty video_crtc_addr ; set crtc address to R15
+	ldy video_crtc_data ; restore memtest address
+	sed		;; decimal flag used to store if memory error occurred
+;; return to correct point in memory test
+.REPEAT mem_error_inv_count, I
+	cmp #.ident(.sprintf("%s%02d_rval",.string(mem_error_inv),I))
+	jeq .ident(.sprintf("%s%02d_return",.string(mem_error_inv),I))
 .ENDREP
-	jmp .ident(.concat("zpmem_ret",.string(mem_error_num-1)))
+	_nomem_return_sparse mem_error, mem_error_count
 
 
 
-;; build memory patterns to match with error labels
-mem_patterns:
-.REPEAT mem_error_num, I
-	.byte .ident(.concat("MEMERRPAT",.string(I)))
-.ENDREP
+;;=====================================
+;; Helpers
+;;
 
+;;
+;; No memory put string from X, trashes A, X
+:	_tx_byte
+	inx
+nomem_ser_puts:
+	_tx_wait_timeout
+	lda strings_start,X
+	bne :-				;; stop if hit null termination
+	_nomem_return_sparse_x nomem_ser_puts, nomem_ser_puts_count
 
+;;
+;; No memory put char from Y, trashes A, X
+nomem_ser_putc:
+	_tx_wait_timeout
+	sty acia_d ;write data
+	_nomem_return nomem_ser_putc, nomem_ser_putc_count
 
+;;
+;; No memory put char to screen, trashes A, X, Y
+nomem_putc:
+	tya
+	sec
+	sbc #$30 ;; character zero offset
+	asl
+	asl
+	asl
+	tay
+:	lda font_zero_p,Y
+	sta screen_ofs+8*40,X
+	iny
+	inx
+	txa
+	and #7
+	bne :-
+	_nomem_return_sparse_x nomem_putc, nomem_putc_count
 
+nomem_putc_lab:
+:	lda font+32*8,Y
+	sta screen_ofs,X
+	iny
+	inx
+	txa
+	and #7
+	bne :-
+	_nomem_return_sparse_x nomem_putc_lab, nomem_putc_lab_count
+	
