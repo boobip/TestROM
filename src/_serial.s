@@ -18,15 +18,65 @@
 	.include "_helpers.inc"
 	.include "_serial.inc"
 	.include "_hardware.inc"
+	.include "_nostack.inc"
+
 
 
 ;;=====================================
-;; Put character to ZP using zero page return mechanism
+;; Put string to serial using zeropage return mechanism
 ;; On Entry:
-;;  X : character to print
+;;  Y    : string offset
+;;  dst_ : destination pointer
+;; On Exit:
+;;  dst_ += strlen*8
 ;; Clobbers:
-;;  A
-	.export zp_ser_phex
-zp_ser_phex:
-	_ser_phex txa
-	jmp (ret_leaf_)
+;;  A, Y
+
+_zp_func_prologue zp_ser_puts
+	
+:	lda __STRINGS_LOAD__,Y
+	beq done
+	_zp_call zp_ser_putc
+	iny
+	bne :-		;; always branch, looking for null termination
+done:
+
+_zp_func_epilogue
+
+;;=====================================
+;; Put character to serial using zeropage return mechanism
+;; On Entry:
+;;  A    : character to print
+;; On Exit:
+;;  
+;; Clobbers:
+;;  A, Y
+
+_zp_func_prologue zp_ser_putc
+
+	sty sy_
+	_tx_wait_timeout_y	;; trashes Y
+	lda sa_	;; call saved a in sa_
+	_tx_byte
+	ldy sy_
+	
+_zp_func_epilogue
+
+;;=====================================
+;; Put hex to serial using zeropage return mechanism 
+;; On Entry:
+;;  A    : number to print
+;; Clobbers:
+;;  Y
+
+_zp_func_prologue zp_ser_phex, {n}
+
+	sta n,X				;; save number in n
+	_hex2ascii_lut_hi Y
+	_zp_call zp_ser_putc
+	lda n,X
+	_hex2ascii_lut_lo Y
+	_zp_call zp_ser_putc
+	lda n,X	
+	
+_zp_func_epilogue

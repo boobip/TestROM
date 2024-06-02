@@ -26,9 +26,12 @@ BINtoBCDlp:         ;;
 	adc tmp
 .ENDMACRO
 
+;; STILL BUGGY?
 .MACRO _pause_us n
-	ldy # >((n*10)/4-1)	;4 loops ~20 cycles or 10us at 2MHz
-	ldx # <((n*10)/4)
+	.local loops
+	loops = (2*n-4)/5	;; number of 5 cycle loops
+	ldy # 1+>(loops+1)
+	ldx # <(loops+1)
 :	dex				;2
 	bne :-			;3 inner loop
 	dey
@@ -39,14 +42,20 @@ BINtoBCDlp:         ;;
 	_pause_us n*1000
 .ENDMACRO
 
-.MACRO _jsr_zeropage ptr, func
-	.local ret
-	lda #<ret
-	sta ptr
-	lda #>ret
-	sta ptr+1
-	jmp func
-ret:
+
+.MACRO _pause_us_ay n
+	.local loops
+	loops = (2*n-8)/9	;; number of 9 cycle loops
+	ldy #<loops
+	lda #>loops
+:	cpy #1			;; 2
+	dey				;; 2
+	sbc #0			;; 2
+	bcs :-			;; 3
+.ENDMACRO
+
+.MACRO _pause_ms_ay n
+	_pause_us_ay n*1000
 .ENDMACRO
 
 .MACRO _mov_dword dst, src
@@ -108,6 +117,28 @@ ret:
 	adc #$06
 :
 	adc #$30
+.ENDMACRO
+
+.MACRO _hex2ascii_lut reg
+	.if .match(reg,X)
+		tax
+	.else
+		tay
+	.endif
+	lda hex2ascii_lut,reg
+.ENDMACRO
+
+.MACRO _hex2ascii_lut_hi reg
+	lsr
+	lsr
+	lsr
+	lsr
+  _hex2ascii_lut reg
+.ENDMACRO
+
+.MACRO _hex2ascii_lut_lo reg
+  and #$0F
+  _hex2ascii_lut reg
 .ENDMACRO
 
 

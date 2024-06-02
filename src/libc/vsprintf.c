@@ -8,13 +8,24 @@
 
 typedef void (*pfnputc_t)(char);
 
-static pfnputc_t outfn_ = 0; // static outfunction saves 200+ bytes of call overhead
+#define SECTION(x) __attribute__((section(x)))
 
-static void outfn(char c)
+
+SECTION("ZPBSS") static pfnputc_t outfn_ = 0; // static outfunction saves 200+ bytes of call overhead
+
+//extern void outfn(char c);
+
+
+__attribute__((naked)) static void jmp_outfn(char c)
 {
-	outfn_(c);
+	__asm__(
+		"jmp (%0)"::"m"(outfn_)
+	);
 }
 
+static void outfn(char c) {
+	jmp_outfn(c);
+}
 
 static const char* ReadFormatFlags(const char* fmt, char* pad, uint8_t* width, bool* leftjustify)
 {

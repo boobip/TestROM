@@ -49,6 +49,7 @@ _zp_word(src_)
 _zp_word(dst_)
 _zp_byte(memsize_)
 
+_zp_byte(zp_stack)
 
 
 #undef IMPORTZP

@@ -14,11 +14,19 @@
 	.segment "CODE"
 
 	.feature string_escapes
-EMITZPVARS = 1
+EMITZPVARS .set 1
 	.include "_zeropage.inc"
 	.include "_helpers.inc"
 	.include "_serial.inc"
 	.include "_hardware.inc"
+	.include "_nostack.inc"
+
+
+
+	.MACPACK longbranch
+	.feature org_per_seg
+	
+
 
 
 ;;=====================================
@@ -34,10 +42,9 @@ EMITZPVARS = 1
 	.local ok
 	cmp pattern
 	beq ok
-	sta r0_
-	lda pattern
-	sta r1_
-	_mem_error
+	sty p_
+	ldy pattern
+	_zp_call mem_error
 ok:
 .ENDMACRO
 
@@ -45,21 +52,15 @@ ok:
 	.local ok
 	cmp #pattern
 	beq ok
-	sta r0_
-	lda #pattern
-	sta r1_
-	_mem_error
+	sty p_
+	ldy #pattern
+	_zp_call mem_error
 ok:
-.ENDMACRO
-
-.MACRO _mem_error
-	_jsr_zeropage ret_mem_err_, mem_error
 .ENDMACRO
 
 .MACRO _checkboard_fill pattern
 	lda s_
 	sta p_+1
-	ldx n_
 :	lda #pattern
 	sta (p_),Y
 	eor #$ff
@@ -68,14 +69,14 @@ ok:
 	iny
 	bne :-
 	inc p_+1
-	dex
+	lda p_+1
+	cmp e_
 	bne :-
 .ENDMACRO
 
 .MACRO _checkboard_check pattern
 	lda s_
 	sta p_+1
-	ldx n_
 :	lda (p_),Y
 	_mem_check_imm pattern
 	iny
@@ -84,34 +85,35 @@ ok:
 	iny
 	bne :-
 	inc p_+1
-	dex
+	lda p_+1
+	cmp e_
 	bne :-
 .ENDMACRO
 
 .MACRO _march_fill pattern
 	lda s_
 	sta p_+1
-	ldx n_
-	lda #pattern
+:	lda #pattern
 :	sta (p_),Y
 	iny
 	bne :-
 	inc p_+1
-	dex
-	bne :-
+	lda p_+1
+	cmp e_
+	bne :--
 .ENDMACRO
 
 
 .MACRO _march_check pattern
 	lda s_
 	sta p_+1
-	ldx n_
 :	lda (p_),Y
 	_mem_check_imm pattern
 	iny
 	bne :-
 	inc p_+1
-	dex
+	lda p_+1
+	cmp e_
 	bne :-
 .ENDMACRO
 
@@ -124,23 +126,22 @@ ok:
 ;; ↑(r0,w1,r1);
 	lda s_
 	sta p_+1
-	ldx n_
 :	lda (p_),Y
 	_mem_check_imm pattern
 	lda #pattern^$ff
 	sta (p_),Y
 	lda (p_),Y
-	_mem_check_imm pattern ^ $ff
+	_mem_check_imm (pattern ^ $ff)
 	iny
 	bne :-
 	inc p_+1
-	dex
+	lda p_+1
+	cmp e_
 	bne :-
 
 ;; ↑(r1,w0);
 	lda s_
 	sta p_+1
-	ldx n_
 :	lda (p_),Y
 	_mem_check_imm pattern ^ $ff
 	lda #pattern
@@ -148,13 +149,13 @@ ok:
 	iny
 	bne :-
 	inc p_+1
-	dex
+	lda p_+1
+	cmp e_
 	bne :-
 
 ;; ↓(r0,w1);
 	lda e_
 	sta p_+1
-	ldx n_
 :	dec p_+1
 :	dey
 	lda (p_),Y
@@ -163,13 +164,13 @@ ok:
 	sta (p_),Y
 	tya		;; Z = (y==0)
 	bne :-
-	dex
+	lda p_+1
+	cmp s_
 	bne :--
 
 ;; ↓(r1,w0);
 	lda e_
 	sta p_+1
-	ldx n_
 :	dec p_+1
 :	dey
 	lda (p_),Y
@@ -178,7 +179,8 @@ ok:
 	sta (p_),Y
 	tya		;; Z = (y==0)
 	bne :-
-	dex
+	lda p_+1
+	cmp s_
 	bne :--
 
 ;; ↕(r0)
@@ -207,7 +209,6 @@ ok:
 ; 83 cycles
 ; 44 bytes
 .MACRO _random_rng
-	txs			; save X to stack pointer
 	; rotate the middle bytes left
 	ldx seed_+2 ; will move to seed_+3 at the end
 	lda seed_+1
@@ -239,7 +240,6 @@ ok:
 	eor seed_+3
 	stx seed_+3 ; finish rotating byte 2 into 3
 	sta seed_+0
-	tsx			; restore X
 .ENDMACRO
 
 ;; random memory test
@@ -248,8 +248,7 @@ ok:
 	_mov_dword sseed_, seed_
 	lda s_
 	sta p_+1
-	ldx n_
-:	_random_rng		;; on exit A = seed_+0
+:	_random_rng		;; on exit A = seed_+0, X = seed_+3
 	sta (p_),Y
 	iny
 	lda seed_+1
@@ -258,23 +257,22 @@ ok:
 	lda seed_+2
 	sta (p_),Y
 	iny
-	lda seed_+3
+	lda seed_+3		;; txa possible
 	sta (p_),Y
 	iny
 	bne :-
 	inc p_+1
-	dex
+	lda p_+1
+	cmp e_
 	bne :-
 .ENDMACRO
 
 .MACRO _random_check
-	.local loop
 	_mov_dword seed_, sseed_
 	lda s_
 	sta p_+1
-	ldx n_
-loop:
-	_random_rng
+:	_random_rng		;; trashes X
+	tsx				; restore stack pointer
 	lda (p_),Y
 	_mem_check seed_
 	iny
@@ -287,11 +285,11 @@ loop:
 	lda (p_),Y
 	_mem_check seed_+3
 	iny
-	beq :++
-:	jmp loop	;; too far for branch so JMP
-:	inc p_+1
-	dex
-	bne :--
+	bne :-
+	inc p_+1
+	lda p_+1
+	cmp e_
+	bne :-
 .ENDMACRO
 
 ;;=====================================
@@ -301,68 +299,93 @@ loop:
 ;;	e_  : end page of test region
 ;;	k_  : <0 for infinite test
 ;; On Exit:
-;;  r3_ : error flags
+;;  A   : error flags
+
+EMITZPVARS .set 2
+.ZEROPAGE
+.org zp_stack
+	;; parameters
+	_zp_byte s_
+	_zp_byte e_
+	_zp_byte k_
+	;; scratch vars
+	_zp_byte r3_
+	_zp_word p_
+	_zp_byte j_
+	_zp_dword sseed_
+scratch_end:
+.CODE
+
+
+;; mem_test - always root, can access args by absolute address
 
 	.export mem_test
-mem_test:
+.proc mem_test
+	_zp_initstack (scratch_end-zp_stack)
+	txs			;; stash stack pointer in S
+
+
 	ldy #0
 	sty p_
 	sty p_+1
 	sty r3_
-	
-	sec
-	lda e_
-	sbc s_
-	sta n_
-	
+
 mem_test_loop:
 	;; checkerboard memory test
 	_checkboard_fill $55
-	_pause_ms 10
+	_pause_ms 10			;; trashes X!
+	tsx
 	_checkboard_check $55
 
 	_checkboard_fill $aa
-	_pause_ms 10
+	_pause_ms 10			;; trashes X!
+	tsx
 	_checkboard_check $aa
+;jmp skip4testing ;; HACK!
 
 	;; random memory test (probes address errors)
 	lda #4
-	sta i_
+	sta j_
 rand_loop:
 	_random_fill
 	_random_check
-	dec i_
+	dec j_
 	beq :+
 	jmp rand_loop
 :
-	
+skip4testing: ;; HACK!
 	;; march c- extended
 	_march_cminus_extended $55
 	_march_cminus_extended $33
 	_march_cminus_extended $0f
 	_march_cminus_extended $00
 
+
+
 	lda r3_
 	lsr				;; test bottom bit of r3
 	bcs :+			;; loop forever if memory fault detected in bottom 16KB
 
 	bit k_			;; mem test counter, <0 means inf loops
-	bmi :+	
-	jmp (ret_mem_)	;; go to menu
+	bmi :+
+	
+	lda r3_
+	jmp mem_test_return	;; go to menu
 :	jmp mem_test_loop	;; test memory again
+.endproc
 
 ;;=====================================
 ;; Memory error handler
-;; 	r0   : value read
-;; 	r1_  : expected pattern
-;; 	p_,Y : address
-;; 	X    : preserve
+;;  p_   : address
+;;  A    : value read
+;;  Y    : expected pattern
 ;; On exit
 ;; 	r3_	: error
 
-mem_error:
-	stx sx_
-	sty sy_
+_zp_func_prologue mem_error, {read pat mask}
+
+	sta read,X
+	sty pat,X
 
 	;; set screen position
 	lda #13*8
@@ -370,58 +393,73 @@ mem_error:
 	lda #0
 	sta dst_+1
 
-	_ser_putc $d	;; send carriage return
-	_ser_putc $a	;; send line feed
-	
-	ldx r0_			;; send read value
-	_jsr_zeropage ret1_, zp_phex
-	_jsr_zeropage ret_leaf_, zp_ser_phex
-	
-	_ser_putc '@'
-	
+	_zp_ser_puts "\r\n" ;; send CRLF
+
+	lda read,X			;; send read value
+	_zp_call zp_phex
+	_zp_call zp_ser_phex
+
+
+	lda #'@'
+	_zp_call zp_ser_putc
+
 	lda #16*8
-	sta dst_	;; set screen pointer
-	
-	ldx p_+1		;; send address of failure HI
-	_jsr_zeropage ret1_, zp_phex
-	_jsr_zeropage ret_leaf_, zp_ser_phex
-		
-	ldx sy_			;; send address of failure LO
-	_jsr_zeropage ret1_, zp_phex
-	_jsr_zeropage ret_leaf_, zp_ser_phex
+	sta dst_			;; set screen pointer
 
-	_ser_putc ' '
-	_ser_putc '('
+	lda p_+1			;; send address of failure HI
+	_zp_call zp_phex
+	_zp_call zp_ser_phex
 
-	lda r0_
-	eor r1_
-	tax
+	lda p_				;; send address of failure LO
+	_zp_call zp_phex
+	_zp_call zp_ser_phex
 
-.REPEAT 8, I
-	txa
-	asl a
-	tax					;; stash bad bits
-	bcs :+
-	;; not in error
-	_ser_putc '0'+7-I
-	bne :++				;; always true
-:
-	.REPEAT 8, J
-		LDA font+8*('X'-' ')+J
-		STA 8*(21+I)+J
-	.ENDREP
-	_ser_putc 'X'
-:	
-.ENDREP
+	_zp_ser_puts " ("
+
+	lda read,X
+	eor pat,X
+	sta mask,X
+
+	lda #21*8
+	sta dst_
+
+	ldy #'7'
+	sec
+	rol mask,X
+loop_biterr:
+	tya
+	bcc :++
+	;; in error
+
+	sty sy_				;; store bit posn
+
+	ldy #7
+:	LDA font+8*('X'-' '),Y
+	STA (dst_),Y			;; put direct to screen
+	dey
+	bpl :-
 	
-	_ser_puts ") expected "
+	ldy sy_				;; restore bit posn
 	
+	lda #'X'
+:	_zp_call zp_ser_putc
+
+	clc
+	lda dst_			;; move screen pointer along 1 char
+	adc #8
+	sta dst_
+	dey
+	asl mask,X
+	bne loop_biterr
+
+	_zp_ser_puts ") expected " 
+
 	lda #30*8
 	sta dst_	;; set screen pointer
 
-	ldx r1_				;; send expected value
-	_jsr_zeropage ret1_, zp_phex
-	_jsr_zeropage ret_leaf_, zp_ser_phex
+	lda pat,X				;; send expected value
+	_zp_call zp_phex
+	_zp_call zp_ser_phex
 
 	;; record where fault was in return flags
 	lda p_+1
@@ -429,25 +467,26 @@ mem_error:
 	rol
 	rol
 	and #3 		;; which 16KB chunk now in bottom 2 bits
-	tax
-	inx
+	tay
+	iny
 	lda #0
 	sec
 :	rol			;; move bit up
-	dex
+	dey
 	bne :-		;; set bit marks region
-	
+
 	;; merge & store in r3
 	ora r3_
-	sta r3_		
+	sta r3_
 
 :	bit k_			;; mem test counter
-	bvs :-			;; bit 6 : HALT on first error	
+	bvs :-			;; bit 6 : HALT on first error
 
 	;; restore registers & leave
-	ldx sx_
-	ldy sy_
+	ldy p_
+	lda #0
+	sta p_
 
-	jmp (ret_mem_err_)
+	_zp_func_epilogue
 
 

@@ -195,36 +195,40 @@ uint8_t cmd_memtest_sys(const char* help, uint8_t arg, uint8_t menu)
 
 	bool halt = (menu == eRAMHALTMENU);
 
+	char* const s_ = &zp_stack;
+	char* const e_ = &zp_stack + 1;
+	char* const k_ = &zp_stack + 2;
+
 	switch (arg)
 	{
 	default:
 	case 0:
-		s_ = 0x1;
-		e_ = memsize_;
+		*s_ = 0x1;
+		*e_ = memsize_;
 		break;
 	case 1:
-		s_ = 0x1;
-		e_ = 0x40;
+		*s_ = 0x1;
+		*e_ = 0x40;
 		break;
 	case 2:
-		s_ = 0x40;
-		e_ = 0x80;
+		*s_ = 0x40;
+		*e_ = 0x80;
 		break;
 	case 3:
-		s_ = 0x1;
-		e_ = 0x80;
+		*s_ = 0x1;
+		*e_ = 0x80;
 		break;
 	}
 
-	k_ = halt ? 0xC0 : 0x80; // run forever 
+	*k_ = halt ? 0xC0 : 0x80; // run forever 
 
-	printf_ser("Testing &%04x-&%04x", (uint16_t)s_ * 256, (uint16_t)e_ * 256 - 1);
+	printf_ser("Testing &%04x-&%04x", (uint16_t)*s_ * 256, (uint16_t)*e_ * 256 - 1);
 
-	uint8_t numkb = ((e_ - s_) / 4 > 16) ? 0x32 : 0x16;
+	uint8_t numkb = ((*e_ - *s_) / 4 > 16) ? 0x32 : 0x16;
 
 	__asm__("sei"); // set interrupt disable
 	for (char* i = (char*)0x100; i < (char*)0x2800; i++) *i = 0; // clear screen, tramples C memory
-	__asm__ __volatile__("jmp init_memtest" : : "xq" (numkb)); // jump to test
+	__asm__ __volatile__("jmp init_memtest" : : "Aq" (numkb)); // jump to test
 	__builtin_unreachable();
 }
 

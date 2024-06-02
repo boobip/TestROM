@@ -16,21 +16,45 @@
 	.feature string_escapes
 	.include "_zeropage.inc"
 	.include "_helpers.inc"
+	.include "_nostack.inc"
+	
 
 font_base = $f800
 
 ;;=====================================
+;; Put string to screen using zeropage return mechanism
+;; On Entry:
+;;  Y    : string offset
+;;  dst_ : destination pointer
+;; On Exit:
+;;  dst_ += strlen*8
+;; Clobbers:
+;;  A, Y
+
+_zp_func_prologue zp_puts
+	
+:	lda __STRINGS_LOAD__,Y
+	beq done
+	_zp_call zp_putc
+	iny
+	bne :-		;; always branch, looking for null termination
+done:
+
+_zp_func_epilogue
+
+;;=====================================
 ;; Put character to screen using zeropage return mechanism
 ;; On Entry:
-;;  r2_  : character to print
+;;  A    : character to print
 ;;  dst_ : destination pointer
 ;; On Exit:
 ;;  dst_ += 8
 ;; Clobbers:
-;;  A, Y
-	.export zp_putc
-zp_putc:
-	lda r2_
+;;  A
+
+_zp_func_prologue zp_putc
+
+	sty sy_
 	and #$7f		;; defensive
 	ldy #>(font_base>>2)
 	sty src_+1
@@ -52,38 +76,29 @@ zp_putc:
 	sta dst_
 	bcc :+
 	inc dst_+1	
-:	jmp (ret_leaf_)
+:	ldy sy_
+	lda sa_
+
+_zp_func_epilogue
 
 ;;=====================================
 ;; Put hex to screen using zeropage return mechanism 
 ;; On Entry:
-;;  X    : number to print
+;;  A    : number to print
 ;;  dst_ : destination pointer
 ;; On Exit:
-;;  dst_ += 8
+;;  dst_ += 16
 ;; Clobbers:
-;;  A, Y
-	.export zp_phex
-zp_phex:
-	txa
-	lsr a
-	lsr a
-	lsr a
-	lsr a
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	adc #$30
-	sta r2_
-	_jsr_zeropage ret_leaf_, zp_putc 
-	txa			; restore value
-	and #$0F
-	cmp #$0A
-	bcc :+
-	adc #$06
-:
-	adc #$30
-	sta r2_
-	_jsr_zeropage ret_leaf_, zp_putc
-	jmp (ret1_)
+;;  Y
+
+_zp_func_prologue zp_phex, {n}
+
+	sta n,X		;; save number in n
+	_hex2ascii_lut_hi Y
+	_zp_call zp_putc
+	lda n,X
+	_hex2ascii_lut_lo Y
+	_zp_call zp_putc
+	lda n,X
+	
+_zp_func_epilogue

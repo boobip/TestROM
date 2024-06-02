@@ -1,6 +1,25 @@
 
 ;; 1.042ms per byte at 9600, 2084 cycles per char @ 2MHz
-.define TXTIMEOUT 
+
+;;=====================================
+;; Serial initialisation constants
+;;
+
+baud = 76800
+;;baud = 9600
+
+; 9600 baud settings
+.IF baud=9600
+init_acia = $16
+init_ula = 100
+.ENDIF
+
+; 76800 baud settings
+.IF baud=76800
+init_acia = $15
+init_ula = 64
+.ENDIF
+
 
 ;;=====================================
 ;; serial helper macros
@@ -14,20 +33,20 @@ loop:
 	beq loop
 .ENDMACRO
 
-.MACRO _tx_wait_timeout_old ; 12 bytes
-	.local loop, timeout
-	ldx #(2000000*10/(baud*15)+1) ; 15 cycle loop
+.MACRO _tx_wait_timeout_y ; 12 bytes
+	.local loop, ok
+	ldy #(2000000*10/(baud*15)+1) ; 15 cycle loop
 loop:
 	lda acia
 	asl
 	asl
-	dex
-	beq timeout
-	bcc loop
-timeout:
+	bcs ok
+	dey
+	bne loop
+ok:
 .ENDMACRO
 
-.MACRO _tx_wait_timeout ; 14 bytes
+.MACRO _tx_wait_timeout_old ; 14 bytes
 	.local loop, timeout
 	lda acia
 	and #2
@@ -37,6 +56,28 @@ loop:
 	adc #1
 	cmp #(2000000*10/(baud*9)+1) ; 9 cycle loop
 	bne loop
+timeout:
+.ENDMACRO
+
+;; this one is decimal flag safe
+.MACRO _tx_wait_timeout ; 14 bytes
+	.local loop, decimal, timeout, n
+	n = (2000000*10/(baud*9)+1) ; 9 cycle loop
+	lda acia		;; 4
+	and #2
+	bne timeout
+loop:
+	cmp #n			;; 2
+	beq timeout		;; 2 - not taken
+	adc #1			;; 2
+	bcc loop		;; 3 - taken
+
+decimal:
+	cld				;; 2
+	adc #1			;; 2
+	cmp #.max(n-100,1)		;; 2
+	bne decimal		;; 3 - taken
+	sed
 timeout:
 .ENDMACRO
 
@@ -94,4 +135,17 @@ msgbuf: .byte msg
 	adc #$30
 	_tx_byte
 	reg			; restore A
+.ENDMACRO
+
+.MACRO _zp_ser_puts str
+	.local ptr,relptr
+	.PUSHSEG
+	.segment "STRINGS"
+	ptr: .byte str,0
+	.POPSEG
+	relptr = <(ptr-__STRINGS_LOAD__)
+	
+	ldy #relptr
+	_zp_call zp_ser_puts
+
 .ENDMACRO

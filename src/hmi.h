@@ -29,7 +29,8 @@ extern void putc_vdu(char c);
 extern void puts_vdu(const char* msg);
 
 static inline void putc_ser(char c) {
-	while (!(inb(&sheila->acia.status) & 10));
+	uint8_t timeout = 0;
+	while (!(inb(&sheila->acia.status) & 10)&&(++timeout<200));
 	outb(&sheila->acia.txb, c);
 }
 extern void puts_ser(const char* msg);

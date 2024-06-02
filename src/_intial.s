@@ -19,11 +19,18 @@
 	.include "_serial.inc"
 	.include "_hardware.inc"
 	.include "_noram.inc"
+	.include "_nostack.inc"
 
 ;;=======================================
 
 .PUSHSEG
 .RODATA
+	.export hex2ascii_lut
+	hex2ascii_lut:
+	.byte "0123456789ABCDEF"		
+
+
+
 mode4_ula = $88
 mode4_palette:
 .byte $07,$17,$27,$37,$47,$57,$67,$77,$80,$90,$a0,$b0,$c0,$d0,$e0,$f0
@@ -40,47 +47,15 @@ screen_start=0;$5800/8
 
 ;; CRTC @ $c46e in MOS
 
-.MACRO _zp_puts msg
-	ldx #256-.strlen(msg)
-:	lda msgbuf-256+.strlen(msg),x
-	sta r2_
-	_jsr_zeropage ret_leaf_, zp_putc
-	inx
-	bne :-
-	beq :+
-msgbuf: .byte msg
-:
-.ENDMACRO
 
 
-
-;;=====================================
-;; Serial initialisation constants
-;;
-
-baud = 76800
-;;baud = 9600
-
-; 9600 baud settings
-.IF baud=9600
-init_acia = $16
-init_ula = 100
-.ENDIF
-
-; 76800 baud settings
-.IF baud=76800
-init_acia = $15
-init_ula = 64
-.ENDIF
 
 
 ;;=====================================
 ;; Helpers
 ;;
 
-back2moslow_dst = $28;$200
-
-back2moslow:
+back2moslow: ;; 14 bytes
 	sei
 	lda #2
 	sta $ff00
@@ -89,21 +64,32 @@ back2moslow:
 	jmp ($fffc)
 back2moslowend:
 
-.MACRO _back2mos
-	ldx #(back2moslowend-back2moslow)
+.MACRO _back2mos dst
+	ldx #(back2moslowend-back2moslow-1)
 :	lda back2moslow,X
-	sta back2moslow_dst,x
+	sta dst,x
 	dex
 	bpl :-
-	ldx #<back2moslow_dst
+	ldx #<dst
 	stx $fffc
-	ldx #>back2moslow_dst
+	ldx #>dst
 	stx $fffd
 .ENDMACRO
 
+.MACRO _zp_puts str
+	.local ptr,relptr
+	.PUSHSEG
 	.segment "STRINGS"
-	strings_start:
-	.CODE
+	ptr: .byte str,0
+	.POPSEG
+	relptr = <(ptr-__STRINGS_LOAD__)
+	
+	ldy #relptr
+	_zp_call zp_puts
+
+.ENDMACRO
+
+
 
 .MACRO _nomem_ser_puts str
 	.local ptr,relptr
@@ -111,11 +97,10 @@ back2moslowend:
 	.segment "STRINGS"
 	ptr: .byte str,0
 	.POPSEG
-	relptr = ptr-strings_start
+	relptr = <(ptr-__STRINGS_LOAD__)
 
-	ldx #(relptr)
+	ldx #relptr
 	_nomem_call_sparse nomem_ser_puts, nomem_ser_puts_count, (relptr+.strlen(str))
-
 .ENDMACRO
 
 .MACRO _nomem_ser_putc
@@ -344,7 +329,7 @@ init_cls:
 	_nomem_ser_puts "Test zero page"
 
 	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
-;	_back2mos
+	_back2mos $200
 ;	sed ; set memory error, loop forever
 
 ;; test zero page
@@ -356,13 +341,12 @@ init_cls:
 .CODE
 
 memtest_zp_loop:
-
 	lda #15
 	sta video_crtc_addr ; leave crtc address on R15 (8 bit)
 
 	;; checkerboard test 55, AA
-	ldy #0
 	ldx #0
+	ldy #0
 zp_check:
 	_checkboard_fill $55
 	_pause_ms 10
@@ -391,12 +375,13 @@ zp_march:
 	jmp memtest_zp_loop ;; seen an error... spin forever
 :	;; decimal mode still clear set so RAM test completed
 
+	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
+	_back2mos $30 ;; tramples X
+
 
 	;; ZP passed the test
-	_nomem_ser_puts ", OK\r\n" ;; We have memory now - shorter/better puts?
-
-	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
-	_back2mos
+	_zp_initstack 4 ;; don't trample mem_test args
+	_zp_ser_puts ", OK\r\n" ;; We have ZP memory now
 
 seed = $b00b19
 	_mov_dword_imm seed_, seed
@@ -408,43 +393,50 @@ seed = $b00b19
 	sta a:memsize_ + $4000
 
 	;; feedback to user
-
-
-	lda #1
+s_ = _zp_stack(0)
+e_ = _zp_stack(1)
+k_ = _zp_stack(2)
+r3_ = _zp_stack(3)
+ 
+	lda #2
 	sta s_			;; boot mem test start from stack $100
 	sta k_			;; do 1 pass of memory test
 
 	lda memsize_
 	sta e_			;; boot mem test do all detected
 	bmi full32KB
-	_nomem_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
-	ldx #$16
+	
+;	_zp_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
+	lda #$16
 	jmp init_memtest
 full32KB:
-	_nomem_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
-	ldx #$32
+;	_zp_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
+	lda #$32
 
 	.export init_memtest
 init_memtest:
+	_zp_initstack 4 ;; don't trample mem_test args, repeated in case we came here from menu
 
-	lda #8*8
-	sta dst_
-	lda #0
-	sta dst_+1		;; setup text destination
+	ldy #8*8
+	sty dst_
+	ldy #0
+	sty dst_+1		;; setup text destination
 
 	;; print memory size on screen
-	_jsr_zeropage ret1_, zp_phex
+	_zp_call zp_phex
 
 	;; show bit positions on screen
 	_zp_puts "KB mm@aaaa 76543210 ee"
-
+		
 	;; do memory test
-	_jsr_zeropage ret_mem_, mem_test
+	jmp mem_test
+	.export mem_test_return
+mem_test_return:
 
 	;; System memory passed the test
 	lda r3_
 	bne rst_handler_2	;; skip printing OK if memory fault
-	_nomem_ser_puts ", OK\r\n"
+	_zp_ser_puts ", OK\r\n" ;; TODO: reuse string from before
 
 ;	jmp rst_handler_2
 ;; fall through to reset handler 2
@@ -466,6 +458,7 @@ rst_handler_2:
 	lda #>__STACKTOP__
 	sta _sp1
 
+;; TODO: move BSS, ZPBSS, DATA copies etc to ASM to save ROM space. 
 
 ;	// cleanup Zero Page
 ;	lda #0
@@ -521,17 +514,17 @@ mem_error_inv:
 
 	;;
 	;; serial/screen out what was read
-	_hex2ascii_bin_hi	;; high char->A
+	_hex2ascii_lut_hi Y		;; high char->A
 	tay
 	_nomem_ser_puts "\r\n"
 	_nomem_ser_putc
 
 	;; write to screen
-	_nomem_putc 14 ;; HACK: fix layout move stuff around later
+	_nomem_putc 14
 
 	tsx
 	txa
-	_hex2ascii_bin_lo	;; low char->A
+	_hex2ascii_lut_lo Y		;; low char->A
 	tay
 	_nomem_ser_putc
 
@@ -541,7 +534,7 @@ mem_error_inv:
 	;;
 	;; serial/screen out address
 	lda video_crtc_data
-	_hex2ascii_bin_hi	;; high char->A
+	_hex2ascii_lut_hi Y		;; high char->A
 	tay
 	_nomem_ser_puts " @ 00"	;; address prefix
 	_nomem_ser_putc
@@ -550,7 +543,7 @@ mem_error_inv:
 	_nomem_putc 10
 
 	lda video_crtc_data
-	_hex2ascii_bin_lo	;; low char->A
+	_hex2ascii_lut_lo Y		;; low char->A
 	tay
 	_nomem_ser_putc
 
@@ -630,7 +623,7 @@ biterror:
 	;;
 	;; serial/screen out pattern
 	txa
-	_hex2ascii_bin_hi	;; high char->A
+	_hex2ascii_lut_hi Y		;; high char->A
 	tay
 	_nomem_ser_putc
 
@@ -639,7 +632,7 @@ biterror:
 
 	tsx
 	txa
-	_hex2ascii_bin_lo	;; low char->A
+	_hex2ascii_lut_lo Y		;; low char->A
 	tay
 	_nomem_ser_putc
 
@@ -702,7 +695,7 @@ biterror:
 	inx
 nomem_ser_puts:
 	_tx_wait_timeout
-	lda strings_start,X
+	lda __STRINGS_LOAD__,X
 	bne :-				;; stop if hit null termination
 	_nomem_return_sparse_x nomem_ser_puts, nomem_ser_puts_count
 
