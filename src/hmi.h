@@ -6,8 +6,6 @@
 
 #include <string.h>
 
-extern char* displaypointer;
-
 static char* const screen_start_ = (char* const)0x1800;
 
 static inline void set_screenstart(uint16_t p)
@@ -42,9 +40,9 @@ static inline void putc_vdu_ser(char c) {
 
 extern void puts_vdu_ser(const char* msg);
 
-extern int printf(const char* fmt, ...);
-extern int printf_vdu(const char* fmt, ...);
-extern int printf_ser(const char* fmt, ...);
+extern int printf(const char* fmt, ...) __attribute__((format (printf, 1, 2)));
+extern int printf_vdu(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+extern int printf_ser(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 static inline void cls(void) {
 	memset(screen_start_, 0, 40 * 32 * 8);

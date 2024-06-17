@@ -1,5 +1,5 @@
 	.pushseg
-	.segment "ZEROPAGE"
+	.segment "ZEROINIT":zeropage
 
 ;;=====================================
 ;; Macro to emit/import varialbe
@@ -41,7 +41,7 @@
 ;; Variable declarations
 ;;
 
-;; unused j_, sa_
+;; unused sx_
 
 	_zp_byte	sa_
 	_zp_byte	sx_
@@ -59,8 +59,9 @@
 ;	_zp_byte _myzp
 
 
+
 	.ifdef 	EMITZPVARS
-		.export zp_stack
+		.exportzp zp_stack
 	.endif
 	
 	.popseg

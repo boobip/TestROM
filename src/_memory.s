@@ -272,7 +272,7 @@ ok:
 	lda s_
 	sta p_+1
 :	_random_rng		;; trashes X
-	tsx				; restore stack pointer
+	tsx				; restore ZP stack pointer
 	lda (p_),Y
 	_mem_check seed_
 	iny
@@ -341,7 +341,7 @@ mem_test_loop:
 	_pause_ms 10			;; trashes X!
 	tsx
 	_checkboard_check $aa
-;jmp skip4testing ;; HACK!
+jmp skip4testing ;; HACK!
 
 	;; random memory test (probes address errors)
 	lda #4
@@ -353,12 +353,12 @@ rand_loop:
 	beq :+
 	jmp rand_loop
 :
-skip4testing: ;; HACK!
 	;; march c- extended
 	_march_cminus_extended $55
 	_march_cminus_extended $33
 	_march_cminus_extended $0f
 	_march_cminus_extended $00
+skip4testing: ;; HACK!
 
 
 
@@ -482,7 +482,7 @@ loop_biterr:
 :	bit k_			;; mem test counter
 	bvs :-			;; bit 6 : HALT on first error
 
-	;; restore registers & leave
+	;; restore address & leave
 	ldy p_
 	lda #0
 	sta p_

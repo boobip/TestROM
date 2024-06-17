@@ -1,10 +1,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "helpers.h"
 #include "menu.h"
 #include "zeropage.h"
 #include "hmi.h"
 
+__asm(";overlay=OVL0_");
+
+
+
+
+#define __CODE SECTION("OVL0")
+#define __DATA SECTION("OVL0")
+#define __RODATA SECTION("OVL0_RODATA")
 
 //
 // emit menu enumerations
@@ -50,6 +59,14 @@ MENUCOMMANDS
 };
 #undef EMIT
 
+//
+// emit function bank table
+#define EMIT(func) __asm(".byte <.bank("#func")");
+__asm(".segment \"RODATA\"\r\n" // RODATA will get fixed up by makedfile
+"commands_bank:"); 
+MENUCOMMANDS
+#undef EMIT
+extern uint8_t commands_bank[];
 
 // 
 // emit function pointer table
@@ -60,6 +77,8 @@ const uint8_t menu_func[] = {
 #undef MENUITEM
 
 static const uint8_t nitems = sizeof(menu_func) / sizeof(uint8_t);
+
+
 
 // 
 // emit menu entry table
@@ -81,11 +100,10 @@ const uint8_t menu_args[] = {
 // emit string table
 
 #define MENUITEM(func, menu, arg, text) text,
-const char* menu_text[] = {
+const char* const menu_text[] = {
 	MENUITEMS
 };
 #undef MENUITEM
-
 
 //
 // Menu state variables
@@ -99,6 +117,7 @@ struct menustate_t {
 //ZPBSS
 struct menustate_t menustate_ = { 0 };
 
+__CODE
 static bool isincurrentmenu(uint8_t row)
 {
 	uint16_t mask = menu_mask[row];
@@ -106,6 +125,7 @@ static bool isincurrentmenu(uint8_t row)
 	return !!(mask & curmask);
 }
 
+__CODE
 const char* findtitle(void)
 {
 	for (uint8_t i = 0; i < nitems; i++)
@@ -118,6 +138,7 @@ const char* findtitle(void)
 
 
 
+__CODE
 void RenderMenu(void)
 {
 	if (menustate_.noredraw) return;
@@ -149,6 +170,7 @@ void RenderMenu(void)
 	menustate_.noredraw = 1;
 }
 
+__CODE
 uint8_t CheckMenu(char m)
 {
 	uint8_t n = '0';
@@ -163,8 +185,11 @@ uint8_t CheckMenu(char m)
 			uint8_t arg = menu_args[i];
 			uint8_t menu = menustate_.current;
 			pfnmenuitem func = commands[menu_func[i]];
+			if (commands_bank[menu_func[i]]==0) {
+
 			uint8_t r = func(label, arg, menu);
 			return r;
+			}
 		}
 
 		++n;
@@ -173,6 +198,7 @@ uint8_t CheckMenu(char m)
 
 
 
+__CODE
 uint8_t cmd_changemenu(const char* help, uint8_t arg, uint8_t menu)
 {
 	menustate_.current = arg;
@@ -180,6 +206,7 @@ uint8_t cmd_changemenu(const char* help, uint8_t arg, uint8_t menu)
 	//	menustate_.highlighted = 1;
 }
 
+__CODE
 uint8_t cmd_memtest_zp(const char* help, uint8_t arg, uint8_t menu)
 {
 	set_screenstart(0);
@@ -189,15 +216,16 @@ uint8_t cmd_memtest_zp(const char* help, uint8_t arg, uint8_t menu)
 	__builtin_unreachable();
 }
 
+__CODE
 uint8_t cmd_memtest_sys(const char* help, uint8_t arg, uint8_t menu)
 {
 	set_screenstart(0);
 
 	bool halt = (menu == eRAMHALTMENU);
 
-	char* const s_ = &zp_stack;
-	char* const e_ = &zp_stack + 1;
-	char* const k_ = &zp_stack + 2;
+	uint8_t* const s_ = &zp_stack;
+	uint8_t* const e_ = &zp_stack + 1;
+	uint8_t* const k_ = &zp_stack + 2;
 
 	switch (arg)
 	{

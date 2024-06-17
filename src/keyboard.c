@@ -8,8 +8,6 @@ void keyboardscan();
 
 
 uint8_t keypress_[128] = { 0 };
-ZPBSS uint8_t currentkey_ = 0;
-ZPBSS uint8_t lastkey_ = 0;
 
 const char kb2ascii_[] = {
    81, 51, 52, 53, 0, 56, 0, 45, 94, 136,

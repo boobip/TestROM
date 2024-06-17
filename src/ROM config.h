@@ -5,7 +5,7 @@
 #define VERSION_NUMBER 1U
 #define TITLE "BooBip Test ROM"
 #define VERSION "0.01"
-#define COPYRIGHT "(C) BooBip.com 2023"
+#define COPYRIGHT "(C) BooBip.com 2024"
 
 __attribute__((section("CODEHW")))
  void service_handler(void);

@@ -1,0 +1,53 @@
+;;
+;; NUMBER OF OVERLAYS
+noverlays = 2
+
+tbl = $ff00
+tbl_end = tbl+noverlays*2
+font = $f900
+
+MACRO _ovl load_addr, filename
+	EQUB >load_addr, <load_addr
+	INCBIN filename
+ENDMACRO
+
+ORG &C000
+INCBIN "bin/test.noovl.bin"
+
+CLEAR EXOSTARTADDR, font
+ORG EXOSTARTADDR
+GUARD font
+
+;;
+;; OVERLAYS
+.menu
+	_ovl $200, "bin/ovl_menu.exo"
+
+.test	
+	_ovl 40*5*8, "HelloWorld.exo"
+
+
+PRINT " ** ROM bytes free=",(font-*)
+
+;; pad with $ff
+FOR i,*,font-1
+	EQUB $ff
+NEXT
+
+
+CLEAR tbl,tbl_end
+ORG tbl
+GUARD tbl_end
+
+;;
+;; OVERLAY POINTER TABLES
+.ovl_tbl_lo
+	EQUB <menu, <test
+.ovl_tbl_hi
+	EQUB >menu, >test
+
+IF *<>tbl_end
+	ERROR "Overlay is table wrong length"
+ENDIF
+
+SAVE &C000,&10000

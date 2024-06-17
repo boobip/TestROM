@@ -24,6 +24,15 @@
 ;;=======================================
 
 .PUSHSEG
+
+.segment "VECTORS"
+	vec_nmi:
+		.byte <nmi_handler,>nmi_handler
+	vec_rst:
+		.byte <rst_handler,>rst_handler
+	vec_irq:
+		.byte <irq_handler,>irq_handler
+
 .RODATA
 	.export hex2ascii_lut
 	hex2ascii_lut:
@@ -42,39 +51,24 @@ screen_start=0;$5800/8
 
 ;;MODE(s) 	Palette register writes (hex)
 ;;0, 3, 4, 6 	80 90 A0 B0 C0 D0 E0 F0 07 17 27 37 47 57 67 77
-;;1, 5 	A0 B0 E0 F0 84 94 C4 D4 26 36 66 76 07 17 47 57
-;;2 	F8 E9 DA CB BC AD 9E 8F 70 61 52 43 34 25 16 07
+;;1, 5			A0 B0 E0 F0 84 94 C4 D4 26 36 66 76 07 17 47 57
+;;2				F8 E9 DA CB BC AD 9E 8F 70 61 52 43 34 25 16 07
 
 ;; CRTC @ $c46e in MOS
 
 
+;;	.export outfn
+;;outfn:
+;;	_tx_wait
+;;	lda _r0
+;;	_tx_byte
+;;	rts
 
 
 
 ;;=====================================
 ;; Helpers
 ;;
-
-back2moslow: ;; 14 bytes
-	sei
-	lda #2
-	sta $ff00
-	lda #127
-	sta $fe4e
-	jmp ($fffc)
-back2moslowend:
-
-.MACRO _back2mos dst
-	ldx #(back2moslowend-back2moslow-1)
-:	lda back2moslow,X
-	sta dst,x
-	dex
-	bpl :-
-	ldx #<dst
-	stx $fffc
-	ldx #>dst
-	stx $fffd
-.ENDMACRO
 
 .MACRO _zp_puts str
 	.local ptr,relptr
@@ -237,19 +231,45 @@ back2moslowend:
 	bne :--
 .ENDMACRO
 
+
+BACK2MOS = 1
+back2moslowdst = 0
+
+;; Dev code - disable OSRAM & return to MOS
+back2mos:
+	sei
+	ldx #(back2moslowend-back2moslow-1)
+:	lda back2moslow,X
+	sta back2moslowdst,x
+	dex
+	bpl :-
+	jmp back2moslowdst
+
+back2moslow: ;; 13 bytes
+	lda #2
+	sta $ff00	;; set OSRAM ROM mode
+	lda #127
+	sta $fe4e	;; make MOS think cold boot
+	jmp ($fffc) ;; reset
+back2moslowend:
+	
 ;;=====================================
 ;; initial reset handler
 ;; assume no memory works, no JSR
 ;;
 
-.MACRO _withlabel
-: NOP
-.ENDMacro
-
 	.export rst_handler
 rst_handler:
 	sei
 	cld
+
+;; Dev code - disable OSRAM & return to MOS on next reset
+.if BACK2MOS<>0
+	ldx #<back2mos
+	stx $fffc
+	ldx #>back2mos
+	stx $fffd
+.endif
 
 ;; setup video, mode 4 & leave CRTC addr on R15
 	lda #mode4_ula
@@ -329,8 +349,30 @@ init_cls:
 	_nomem_ser_puts "Test zero page"
 
 	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
-	_back2mos $200
 ;	sed ; set memory error, loop forever
+
+;;jmp test_exo
+
+;;	lda #10
+;;	jsr outfn
+;;
+;;	ldx #$ff
+;;	tsx
+;;	lda #4 ;; radix/neg
+;;	sta _r0
+;;	_mov_dword_imm _r1, 1234
+;;	lda #8 ;; n pad
+;;	sta _r5
+;;	lda #'0' ;; char pad
+;;	sta _r6
+;;	jsr hextoa
+;;	
+;;	
+;;:jmp :-
+	
+
+
+
 
 ;; test zero page
 .RODATA
@@ -374,9 +416,6 @@ zp_march:
 	bcc :+
 	jmp memtest_zp_loop ;; seen an error... spin forever
 :	;; decimal mode still clear set so RAM test completed
-
-	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
-	_back2mos $30 ;; tramples X
 
 
 	;; ZP passed the test
@@ -438,38 +477,35 @@ mem_test_return:
 	bne rst_handler_2	;; skip printing OK if memory fault
 	_zp_ser_puts ", OK\r\n" ;; TODO: reuse string from before
 
-;	jmp rst_handler_2
 ;; fall through to reset handler 2
 
 ;;=====================================
 ;; follow on reset handler
-;; ZP & stack tested OK
+;; bottom 16KB passed memory test
 ;;
 	.export rst_handler_2
 rst_handler_2:
 	sei
 	cld
+	
 	ldx #$ff
 	txs		; intialise stack pointer
-
-
-	lda #<__STACKTOP__
-	sta _sp0			;; intialise C soft stack
-	lda #>__STACKTOP__
-	sta _sp1
-
-;; TODO: move BSS, ZPBSS, DATA copies etc to ASM to save ROM space. 
-
-;	// cleanup Zero Page
-;	lda #0
-;	ldx #$50
-;:	sta &00,X
+	
+;	ldx#0
+;	txa
+;:	sta 0,X
 ;	inx
 ;	bne :-
 
-;:	jmp :- ;; spin wait for RESET
 
-	jmp rst_handler_3 ;; go to C code
+	ldy #<.bank(init_entry)	;; init & menu overlay
+	jsr decrunch_ovl
+	jmp init_entry
+	
+
+
+
+
 
 
 ;;=====================================

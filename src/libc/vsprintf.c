@@ -5,27 +5,54 @@
 
 #include <stdbool.h>
 
+#include "../zeropage.h"
+
+extern void outfn(char c);
 
 typedef void (*pfnputc_t)(char);
 
-#define SECTION(x) __attribute__((section(x)))
 
-
-SECTION("ZPBSS") static pfnputc_t outfn_ = 0; // static outfunction saves 200+ bytes of call overhead
-
-//extern void outfn(char c);
-
-
-__attribute__((naked)) static void jmp_outfn(char c)
+__attribute__((pure))
+static char hextoascii(char radix, uint32_t num, char npad, char cpad)
 {
+	register char ret;
+	register char r __asm("r0") = radix;
+	register uint32_t n __asm("r1") = num;
+	register char np __asm("r5") = npad;
+	register char cp __asm("r6") = cpad;
+	__asm volatile (
+	"jsr hextoa; %0 %1 %2 %3 %4\n": "=Aq"(ret)
+		: "r"(r), "r"(n), "r"(np), "r"(cp)
+		);
+	return ret;
+}
+
+
+__attribute__((pure))
+static char dectoascii(bool neg, uint32_t num, char npad, char cpad)
+{
+	register char ret;
+	register char r __asm("r0") = neg;
+	register uint32_t n __asm("r1") = num;
+	register char np __asm("r5") = npad;
+	register char cp __asm("r6") = cpad;
+	__asm volatile (
+	"jsr dectoa; %0 %1 %2 %3 %4\n": "=Aq"(ret)
+		: "r"(r), "r"(n), "r"(np), "r"(cp)
+		);
+	return ret;
+}
+
+
+
+
+/*
+__attribute__((naked)) void outfn(char c) {
 	__asm__(
 		"jmp (%0)"::"m"(outfn_)
 	);
 }
-
-static void outfn(char c) {
-	jmp_outfn(c);
-}
+*/
 
 static const char* ReadFormatFlags(const char* fmt, char* pad, uint8_t* width, bool* leftjustify)
 {
@@ -86,87 +113,17 @@ static void RepeatChar(char c, char n)
 	}
 }
 
-static uint8_t udectoa_count(uint32_t num)
-{
-	uint8_t c = 0;
-
-	do {
-		num /= 10;
-		c++;
-	} while (num);
-
-	return c;
-}
-
-static void udectoa(uint32_t num)
-{
-	if (!num) {
-		outfn('0');
-	}
-	else {
-		bool leading = false;
-		uint32_t t = 1000000000;
-
-		do
-		{
-			uint8_t d = 0;
-
-			d = num / t;
-			num %= t;
-
-			if ((d != 0) || leading) {
-				outfn('0' + d);
-				leading = true;
-			}
-
-			t /= 10;
-		} while (t);
-	}
-}
 
 
 
 
-static uint8_t hextoa_count(uint32_t num)
-{
-	uint8_t c = 0;
-	do {
-		num >>= 4;
-		c++;
-	} while (num);
-
-	return c;
-}
-
-static void hextoa(uint32_t num)
-{
-	if (!num) {
-		outfn('0');
-	}
-	else {
-		bool leading = false;
-		for (uint8_t i = 0; i < 8; i++)
-		{
-			//uint8_t d = (num >> 24);
-			uint8_t d = ((uint8_t*)&num)[3]; // shorter but not good C
-
-			d >>= 4; // want high nibble
-			num <<= 4;
-
-			if ((d != 0) || leading) {
-				char a = d;
-				a += (d > 9) ? 'A' - 10 : '0';
-
-				outfn(a);
-				leading = true;
-			}
-		}
-	}
-}
 
 
 
 
+
+
+//__attribute__((section("OVL1")))
 int _vsprintf(pfnputc_t putc, const char* fmt, va_list ap)
 {
 	outfn_ = putc;
@@ -225,14 +182,7 @@ int _vsprintf(pfnputc_t putc, const char* fmt, va_list ap)
 					val = -(int32_t)val;
 					neg = true;
 				}
-				len = udectoa_count(val) + (uint8_t)neg; // +1 char for minus symbol if necessary
-
-				if (width > len && !leftjustify) {
-					if (neg && pad == '0') outfn('-');
-					RepeatChar(pad, width - len);
-					if (neg && pad != '0') outfn('-');
-				}
-				udectoa(val);
+				len = dectoascii(neg, val, width, pad);
 			}
 			break;
 
@@ -242,7 +192,6 @@ int _vsprintf(pfnputc_t putc, const char* fmt, va_list ap)
 			case 'f':
 			case 'g':
 			case 'G':
-			case 'o':
 				continue;
 #endif // 0
 			case 's':
@@ -254,15 +203,23 @@ int _vsprintf(pfnputc_t putc, const char* fmt, va_list ap)
 				while (*s) outfn(*s++);
 			}
 			break;
+			case 'b':;
+				uint8_t radix;
+				radix = 1;		// binary
+				goto basen;
+			case 'o':
+				radix = 0x3;	// octal
+				goto basen;
 			case 'p':
 				if (width < 4) width = 4;
 			case 'x':
-			case 'X':
+				//case 'X':
+				radix = 0xf;	// HEX
+			basen:
 			{
 				uint32_t val = (longint) ? va_arg(ap, uint32_t) : va_arg(ap, uint16_t);
-				len = hextoa_count(val);
-				if (width > len && !leftjustify) RepeatChar(pad, width - len);
-				hextoa(val);
+				uint8_t npad = (leftjustify) ? 0 : width;
+				len = hextoascii(radix, val, npad, pad);
 			}
 			break;
 
@@ -281,10 +238,10 @@ int _vsprintf(pfnputc_t putc, const char* fmt, va_list ap)
 
 			// pad right if required
 			if (leftjustify && width > len) RepeatChar(' ', width - len);
-			nchar += (width > len) ? width : len;
+			nchar += (len > width) ? len : width;
+			}
 		}
-	}
 
 	return nchar;
-}
+	}
 

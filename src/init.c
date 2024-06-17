@@ -13,22 +13,7 @@ extern void rst_handler(void);
 extern void irq_handler(void);
 
 
-typedef struct {
-	void* nmi;
-	void* rst;
-	void* irq;
-} vtable_t;
 
-
-__attribute__((section("VECTORS")))
-vtable_t _vtable = {
-	nmi_handler,
-	rst_handler,
-	irq_handler
-};
-
-ZPBSS static uint32_t irqcount_ = 0;
-ZPBSS static uint32_t nmicount_ = 0;
 
 static void init_bss(void);
 static void init_data(void);

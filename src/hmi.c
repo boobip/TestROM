@@ -7,7 +7,6 @@
 extern int _vsprintf(void (*outfn)(char), const char* fmt, va_list ap);
 
 
-ZPBSS char* displaypointer = 0;
 
 
 
@@ -42,9 +41,7 @@ void puts_vdu_ser(const char* msg)
 	putc_ser('\n');
 }
 
-
-
-int printf(const char* fmt, ...)
+int printf(const char* fmt, ...) 
 {
 	va_list ap;
 	int retcode;
