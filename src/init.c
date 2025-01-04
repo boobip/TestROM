@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <string.h>
+
+#include "helpers.h"
 #include "zeropage.h"
 #include "hardware.h"
 #include "hmi.h"
@@ -12,15 +14,16 @@ extern void nmi_handler(void);
 extern void rst_handler(void);
 extern void irq_handler(void);
 
+#define __CODE SECTION("OVL0")
 
 
 
-static void init_bss(void);
-static void init_data(void);
-static void init_display(void);
-static void init_sound(void);
-static void init_sysvia(void);
-static void init_uservia(void);
+__CODE static void init_bss(void);
+__CODE static void init_data(void);
+__CODE static void init_display(void);
+__CODE static void init_sound(void);
+__CODE static void init_sysvia(void);
+__CODE static void init_uservia(void);
 
 
 
@@ -33,41 +36,48 @@ void nmi_handler(void) {
 
 __attribute__((naked))
 void irq_handler(void) {
-	__asm__("pha\ntya\npha\ntxa\npha");
+	__asm__("pha\ntya\npha\ntxa\npha\ncld");
 
 
 	if (sheila->system_via.ifr & 2) {
-		volatile uint8_t* const p = (uint8_t*)0x1a01;
-		*p += 1; // trample some RAM
+		volatile uint8_t* const p = (uint8_t*)0x1a;// 01;
+		*p ^= 128; // trample some RAM
+
+		//HACK:: trample some ZP for testing
+//		if ((*p & 15) == 0)
+//			__asm__("lda #128\neor $99\nsta $99");
+//		if ((*p & 15) == 8)
+//			__asm__("lda #1\neor $98\nsta $98");
 
 	}
 	sheila->system_via.ifr = 0x7f; // clear all interrupts?
+
+
 
 	//	++irqcount_;
 	__asm__("pla\ntax\npla\ntay\npla");
 	__asm__("rti");
 }
 
-
-
-
-
 // arrived in C land. Zero page tested OK
 //__attribute__((noreturn))
+__CODE
 void rst_handler_3(void) {
-	init_bss();
-	init_data();
+//	init_bss();
+//	init_data();
 
 	init_display();
 	init_sysvia();
 
 	init_sound();
 
+//	int n=printf("*%x %-4x %08lx %p*\r\n", 0x12, 0x34, 0xb00b19UL, (void*)0xa );
+//	printf("*%04d %4d %08ld %d*\r\n", n, -12, -12UL, 12 );
+//	printf("*%08b %08o %08x", 0x123,0x123,0x123);
 
-	main();
+	FARJMP(main);
 	__builtin_unreachable();
 }
-
 
 
 

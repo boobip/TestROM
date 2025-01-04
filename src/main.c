@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "helpers.h"
 #include "hmi.h"
 #include "menu.h"
 
@@ -9,9 +10,12 @@
 // Set stack top
 //__asm__(".export __STACKTOP__: absolute = $3000\n");
 
+#define __CODE SECTION("OVL1")
+__asm(";overlay=OVL1_");
 
 
 
+__CODE
 void main(void)
 {
 	while (1)

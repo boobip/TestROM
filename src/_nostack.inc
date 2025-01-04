@@ -9,7 +9,7 @@ zp_par6 = $06
 zp_par7 = $07
 
 zp_stack = $18
-zp_stack_len = 16
+zp_stack_len = 24
 
 .define _zp_par(n) zp_par0+n,X
 .define _zp_stack(n) zp_stack+n
@@ -31,8 +31,8 @@ zp_stack_len = 16
 .MACRO _zp_call func
 	.local ret, retptr_hi, retofs
 
-	sta sa_
-	lda #retofs
+	sta sa_			;; refactor to remove this could save 114 bytes
+	lda #retofs		;; use X? Save stack pointer in S, trash X?
 	jmp func
 	ret:
 		

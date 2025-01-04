@@ -10,6 +10,7 @@
 
 
 .enum OVERLAYS
+	init
 	menu
 	helloworld
 	noverlays
@@ -22,7 +23,6 @@ numoverlays = OVERLAYS::noverlays
 ;;
 ;; Overlays table
 .segment "OVL_TBL"
-
 	.export ovl_tbl_lo, ovl_tbl_hi
 ovl_tbl_lo:
 	.res numoverlays
@@ -59,17 +59,63 @@ get_crunched_byte_end:
 	dex
 	bpl :-
 
+	sty current_bank_
+	
 	;; patch in data address
-	lda ovl_tbl_lo,Y
-	sta _byte_lo
 	lda ovl_tbl_hi,Y
 	sta _byte_hi
+	lda ovl_tbl_lo,Y
+	sta _byte_lo
 
 	;; call exomizer
 	jmp decrunch ;; tail call
 .endproc
 
+;; far_call
+;; on entry new bank in Y, func in ret_
+	.export far_call
+.proc far_call
+	
+	lda current_bank_
+	pha
 
+	cpy current_bank_
+	beq :+			;; if same bank then skip overlay expand
+	tya
+	bmi :+			;; if ROM (bank FF) skip overlay expand
+	
+	jsr decrunch_ovl
+	
+:	jsr jmp_ret_	;; do function call
+	
+	pla				;; pop previous bank
+	cmp current_bank_
+	beq	:+			;; if same bank then skip overlay expand
+	tay
+	bmi :+			;; if ROM (bank FF) skip overlay expand
+	
+	jmp decrunch_ovl ;; tail call
+	
+:	rts	
+.endproc
+
+
+;; far_jump_ax
+;; on entry new bank in Y, func AX
+	.export far_jump_ax
+far_jump_ax:
+	sta ret_+1
+	stx ret_
+
+;; far_jump
+;; on entry new bank in Y, func in ret_
+	.export far_jump
+far_jump:
+	ldx #$ff
+	txs					;; reset stack
+	jsr decrunch_ovl
+jmp_ret_:
+	jmp (ret_)
 	
 
 ;; Declare segment for linker
@@ -78,16 +124,6 @@ get_crunched_byte_end:
 
 ;; TESTING STUFF vvv
 
-.export _bank1
-_bank1=.bank(_ovl1_tbl)
-.export _bank2
-_bank2=.bank(decrunch_ovl)
-
-
-.segment "OVL1"
-	.export _ovl1_tbl
-	_ovl1_tbl:
-	.byte 4
 .segment "OVL2"
 	.export _ovl2_tbl
 	_ovl2_tbl:

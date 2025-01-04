@@ -479,24 +479,12 @@ mem_test_return:
 rst_handler_2:
 	sei
 	cld
+
+	ldy #<.bank(init_entry)	;; init overlay
+	lda #>init_entry		;; hi byte
+	ldx #<init_entry		;; lo byte
 	
-	ldx #$ff
-	txs		; intialise stack pointer
-	
-;	ldx#0
-;	txa
-;:	sta 0,X
-;	inx
-;	bne :-
-
-
-	ldy #<.bank(init_entry)	;; init & menu overlay
-	jsr decrunch_ovl
-	jmp init_entry
-	
-
-
-
+	jmp far_jump_ax
 
 
 

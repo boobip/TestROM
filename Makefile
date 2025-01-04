@@ -57,6 +57,7 @@ vpath %.s $(sort $(dir $(ASRCS_PATH)))
 AINCS_PATH = $(wildcard $(patsubst %,%/*.inc,$(SDIRS)))
 
 OVERLAYS_PATH = \
+bin/ovl_init.bin \
 bin/ovl_menu.bin \
 bin/test_ovl2.bin
 OVLSRCS = $(notdir $(OVERLAYS_PATH))
@@ -124,14 +125,13 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
 
 COMPILE.c = $(CC) $(DEPFLAGS) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c
-POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
+POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d && touch $@
 
 $(BDIR)/%.s : %.c
-#$(BDIR)/%.s : %.c $(DEPDIR)/%.d 
+$(BDIR)/%.s : %.c $(DEPDIR)/%.d 
 	$(COMPILE.c) -S -o $@ $<
 	$(POSTCOMPILE)
 	awk 'match($$0,/;overlay=(\w+)/,arr){print arr[1]; exit}' $@ | xargs -r -I {} sed -i -E 's/(.segment\s+)"(DATA|RODATA)"/\1 "{}\2"/g' $@
-#	touch $@
 
 .PRECIOUS: $(BDIR)/%.s
 

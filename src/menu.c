@@ -6,14 +6,14 @@
 #include "zeropage.h"
 #include "hmi.h"
 
-__asm(";overlay=OVL0_");
+__asm(";overlay=OVL1_");
 
 
 
 
-#define __CODE SECTION("OVL0")
-#define __DATA SECTION("OVL0")
-#define __RODATA SECTION("OVL0_RODATA")
+#define __CODE SECTION("OVL1")
+#define __DATA SECTION("OVL1")
+#define __RODATA SECTION("OVL1_RODATA")
 
 //
 // emit menu enumerations
@@ -51,6 +51,7 @@ enum {
 
 
 
+#if 0
 //
 // emit function table
 #define EMIT(func) func,
@@ -58,12 +59,32 @@ const pfnmenuitem commands[] = {
 MENUCOMMANDS
 };
 #undef EMIT
+#endif // 0
+
+//
+// emit function table hi bytes
+#define EMIT(func) __asm(".byte .hibyte("#func")");
+__asm(".segment \"RODATA\"\r\n" // RODATA will get fixed up by makefile
+"commands_hi:");
+MENUCOMMANDS
+#undef EMIT
+extern uint8_t commands_hi[];
+
+//
+// emit function table lo bytes
+#define EMIT(func) __asm(".byte .lobyte("#func")");
+__asm(".segment \"RODATA\"\r\n" // RODATA will get fixed up by makefile
+"commands_lo:");
+MENUCOMMANDS
+#undef EMIT
+extern uint8_t commands_lo[];
+
 
 //
 // emit function bank table
 #define EMIT(func) __asm(".byte <.bank("#func")");
-__asm(".segment \"RODATA\"\r\n" // RODATA will get fixed up by makedfile
-"commands_bank:"); 
+__asm(".segment \"RODATA\"\r\n" // RODATA will get fixed up by makefile
+"commands_bank:");
 MENUCOMMANDS
 #undef EMIT
 extern uint8_t commands_bank[];
@@ -116,6 +137,8 @@ struct menustate_t {
 
 //ZPBSS
 struct menustate_t menustate_ = { 0 };
+
+
 
 __CODE
 static bool isincurrentmenu(uint8_t row)
@@ -184,12 +207,15 @@ uint8_t CheckMenu(char m)
 			const char* label = menu_text[i];
 			uint8_t arg = menu_args[i];
 			uint8_t menu = menustate_.current;
-			pfnmenuitem func = commands[menu_func[i]];
-			if (commands_bank[menu_func[i]]==0) {
 
-			uint8_t r = func(label, arg, menu);
+			//pfnmenuitem func = commands[menu_func[i]];
+			uint8_t bank = commands_bank[menu_func[i]];
+			uint8_t lo = commands_lo[menu_func[i]];
+			uint8_t hi = commands_hi[menu_func[i]];
+
+			uint8_t r;
+			FARCALL(pfnmenuitem, r, hi, lo, bank, label, arg, menu);
 			return r;
-			}
 		}
 
 		++n;
@@ -210,9 +236,17 @@ __CODE
 uint8_t cmd_memtest_zp(const char* help, uint8_t arg, uint8_t menu)
 {
 	set_screenstart(0);
-	__asm__("sed"); // set decimal for perpetual test
 	__asm__("sei"); // set interrupt disable
+	__asm__("sed"); // set decimal for perpetual test
 	__asm__("jmp init_cls"); // jump to test
+	__builtin_unreachable();
+}
+
+void clearscreen_jumpmemtest(uint8_t numkb) // must be in ROM not overlay
+{
+	__asm("sei"); // set interrupt disable
+	for (char* i = (char*)0x100; i < (char*)0x2800; i++) *i = 0; // clear screen, tramples C memory & overlay code
+	__asm volatile("jmp init_memtest" : : "Aq" (numkb)); // jump to test
 	__builtin_unreachable();
 }
 
@@ -254,9 +288,6 @@ uint8_t cmd_memtest_sys(const char* help, uint8_t arg, uint8_t menu)
 
 	uint8_t numkb = ((*e_ - *s_) / 4 > 16) ? 0x32 : 0x16;
 
-	__asm__("sei"); // set interrupt disable
-	for (char* i = (char*)0x100; i < (char*)0x2800; i++) *i = 0; // clear screen, tramples C memory
-	__asm__ __volatile__("jmp init_memtest" : : "Aq" (numkb)); // jump to test
-	__builtin_unreachable();
+	clearscreen_jumpmemtest(numkb);
 }
 

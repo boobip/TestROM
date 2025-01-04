@@ -18,38 +18,34 @@
 	.include "_serial.inc"
 	.include "_hardware.inc"
 
+	.import __STACKTOP__
+
 	.segment "OVL0HDR"
 	
-.export c_stack
-c_stack:
-	.res $100,0
-	
-c_stack_top = *-1
-
-	.segment "OVL0"
-
-
 .export init_entry
 init_entry:
 
-	lda #<c_stack_top
+	;; cleanup Zero Page
+	ldx#$50
+	lda#0
+:	sta 0,X
+	inx
+	bne :-
+
+	lda #<__STACKTOP__
 	sta _sp0			;; intialise C soft stack
-	lda #>c_stack_top
+	lda #>__STACKTOP__
 	sta _sp1
 
 ;; TODO: move BSS, ZPBSS, DATA copies etc to ASM to save ROM space. 
 
-;	// cleanup Zero Page
-;	lda #0
-;	ldx #$50
-;:	sta &00,X
-;	inx
-;	bne :-
 
 ;:	jmp :- ;; spin wait for RESET
 
 	jmp rst_handler_3 ;; go to C code
 	
+	.segment "OVL0"
+	.segment "OVL0_RODATA"
 
 
 

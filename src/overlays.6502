@@ -1,9 +1,9 @@
 ;;
 ;; NUMBER OF OVERLAYS
-noverlays = 2
+noverlays = 3
 
 tbl = $ff00
-tbl_end = tbl+noverlays*2
+tbl_end = tbl+2*noverlays
 font = $f900
 
 MACRO _ovl load_addr, filename
@@ -20,9 +20,10 @@ GUARD font
 
 ;;
 ;; OVERLAYS
+.init
+	_ovl $200, "bin/ovl_init.exo"
 .menu
-	_ovl $200, "bin/ovl_menu.exo"
-
+	_ovl $400, "bin/ovl_menu.exo"
 .test	
 	_ovl 40*5*8, "HelloWorld.exo"
 
@@ -42,9 +43,9 @@ GUARD tbl_end
 ;;
 ;; OVERLAY POINTER TABLES
 .ovl_tbl_lo
-	EQUB <menu, <test
+	EQUB <init, <menu, <test
 .ovl_tbl_hi
-	EQUB >menu, >test
+	EQUB >init, >menu, >test
 
 IF *<>tbl_end
 	ERROR "Overlay is table wrong length"
