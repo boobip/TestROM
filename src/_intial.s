@@ -57,15 +57,6 @@ screen_start=0;$5800/8
 ;; CRTC @ $c46e in MOS
 
 
-;;	.export outfn
-;;outfn:
-;;	_tx_wait
-;;	lda _r0
-;;	_tx_byte
-;;	rts
-
-
-
 ;;=====================================
 ;; Helpers
 ;;
@@ -350,6 +341,7 @@ init_cls:
 
 	;; DEBUG!!!!!!!!!!!!!!!!!!!!!
 ;	sed ; set memory error, loop forever
+;	cli
 
 ;;jmp test_exo
 
@@ -437,7 +429,7 @@ e_ = _zp_stack(1)
 k_ = _zp_stack(2)
 r3_ = _zp_stack(3)
  
-	lda #2
+	lda #1
 	sta s_			;; boot mem test start from stack $100
 	sta k_			;; do 1 pass of memory test
 
@@ -445,11 +437,11 @@ r3_ = _zp_stack(3)
 	sta e_			;; boot mem test do all detected
 	bmi full32KB
 	
-;	_zp_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
+	_zp_ser_puts "16KB detected\r\nTesting &0100-&3FFF"
 	lda #$16
 	jmp init_memtest
 full32KB:
-;	_zp_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
+	_zp_ser_puts "32KB detected\r\nTesting &0100-&7FFF"
 	lda #$32
 
 	.export init_memtest
@@ -520,6 +512,7 @@ rst_handler_2:
 err_row = 5
 screen_ofs = 40*8*err_row
 font_zero_p = font+8*('0'-' ')
+font_x_p = font+8*('X'-' ')
 
 ; got... read, addr, pat
 ; regs... a, x, y, s
@@ -603,46 +596,49 @@ mem_error_inv:
 	txa
 	eor pattern,y		;; make bitmask for bad bits
 	
-	ldx #'7'
-	txs					;; stash bit number in S
-
+	ldy #7				;; starting at bit 7
 	sec
 	rol a				;; get 1st bit & rol in a 1 for loop counting
 biterror:
-	tay 				;; stash bitmask in Y
-	tsx
-	txa					;; bit posn char -> A
+	tax
+	txs					;; stash bitmask in S
+
+	tya
+	ora #'0'			;; create bit position character
+	tax
 	bcc @next			;; branch taken when not in error
 	
 	;; bit in error, display on screen
-	eor #$ff
-	adc #'7'			;; carry set here
+	tya					;; bit posn
 	asl
 	asl
 	asl
+	eor #$3f			;; reverse bit posn + set bottom 3 bits (paint char descending)
 	tax					;; screen offset in X
 
-	;; hard coded X
-	lda #$66
-	sta screen_ofs+8*40+0,X
-	sta screen_ofs+8*40+1,X
-	sta screen_ofs+8*40+5,X
-	sta screen_ofs+8*40+6,X
-	lda #$3c
-	sta screen_ofs+8*40+2,X
-	sta screen_ofs+8*40+4,X
-	lda #$18
-	sta screen_ofs+8*40+3,X
-	lda #0
-	sta screen_ofs+8*40+7,X
-
+	;; copy X to screen
+	ldy #7
+:	lda font_x_p,Y
+	sta screen_ofs+8*40,X
+	dex
+	dey
+	bpl :-
+	
 	ldx #'X'
 @next:
-	_tx_wait_timeout
+	_tx_wait_timeout_y
 	stx acia_d 			;; push bit posn or X for bad bit to serial
-	pha					;; decrement S
-	tya
-	asl a				;; shift right, once zero R13 zero again - OK
+	
+	;; count zeros in bitmask to determine which bit number
+	tsx					;; fetch bitmask
+	txa
+	ldy #7
+:	lsr
+	dey					;; count down trailing 0 in Y
+	bcc :-
+	
+	txa
+	asl a				;; shift left to get next bit in carry
 	bne biterror
 	
 	_nomem_ser_puts ") pat: "	;; close bit error braces
@@ -681,23 +677,14 @@ biterror:
 	
 	;;
 	;; init bit positions on screen
-	
-	ldx #7*8			;; start at font char '7'
-	txs
-	ldy #0
-
-:	tsx
-:	lda font_zero_p,X
+	ldx #8*8-1			;; 8 chars
+:	txa
+	eor #$38			;; want to print 7->0
+	tay
+	lda font_zero_p,X
 	sta screen_ofs,Y
-	pha					;; decrement S
-	inx
-	iny
-	tya
-	and #7				;; finished this char?
-	bne :-
-	cpy #64				;; finshed 8 chars?
-	bne :--
-	
+	dex
+	bpl :-	
 
 	; restore pattern index to X, mem address to Y and jump point to A
 	lda video_crtc_data ; load pattern index & return jump point

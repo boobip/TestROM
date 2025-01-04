@@ -60,7 +60,7 @@ timeout:
 .ENDMACRO
 
 ;; this one is decimal flag safe
-.MACRO _tx_wait_timeout ; 14 bytes
+.MACRO _tx_wait_timeout ; 23 bytes
 	.local loop, decimal, timeout, n
 	n = (2000000*10/(baud*9)+1) ; 9 cycle loop
 	lda acia		;; 4

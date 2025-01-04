@@ -81,7 +81,7 @@ void swr_help(uint8_t ofs)
 
 		while (1)
 		{
-			char j = 0;
+			uint8_t j = 0;
 			char a, b, u;
 			do {
 				a = getcommandchar(i++);

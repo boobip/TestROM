@@ -22,6 +22,7 @@ PROCassemble
 PRINT"Run init"
 !&70=&3C00
 !&72=&C000
+SOUND1,-5,0,100
 CALL init
 STOP
 DEFPROCmode_rom:?&FF00=2:ENDPROC
@@ -44,7 +45,7 @@ FORpass%=0TO3STEP3
   inc &71
   inc &73:lda &73:cmp #&FC:bne cploop
   sei:lda #4+bank2%:sta &FF00:jsr inithigh \RAM exec
-  lda #4+bank%:sta &FF00:jmp (&FFFC) \ jump to TestROM reset handler
+  lda #4+bank%:sta &FFF9:jmp (&FFFC) \ jump to TestROM reset handler
   ]
   P%=&C000
   [opt pass%
