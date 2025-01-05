@@ -257,7 +257,7 @@ ok:
 	lda seed_+2
 	sta (p_),Y
 	iny
-	lda seed_+3		;; txa possible
+	txa				;;	lda seed_+3	
 	sta (p_),Y
 	iny
 	bne :-
@@ -272,7 +272,6 @@ ok:
 	lda s_
 	sta p_+1
 :	_random_rng		;; trashes X
-	tsx				; restore ZP stack pointer
 	lda (p_),Y
 	_mem_check seed_
 	iny
@@ -322,9 +321,6 @@ scratch_end:
 	.export mem_test
 .proc mem_test
 	_zp_initstack (scratch_end-zp_stack)
-	txs			;; stash stack pointer in S
-
-
 	ldy #0
 	sty p_
 	sty p_+1
@@ -334,14 +330,12 @@ mem_test_loop:
 	;; checkerboard memory test
 	_checkboard_fill $55
 	_pause_ms 10			;; trashes X!
-	tsx
 	_checkboard_check $55
 
 	_checkboard_fill $aa
 	_pause_ms 10			;; trashes X!
-	tsx
 	_checkboard_check $aa
-jmp skip4testing ;; HACK!
+;jmp skip4testing ;; HACK!
 
 	;; random memory test (probes address errors)
 	lda #4
@@ -353,14 +347,12 @@ rand_loop:
 	beq :+
 	jmp rand_loop
 :
+skip4testing: ;; HACK!
 	;; march c- extended
 	_march_cminus_extended $55
 	_march_cminus_extended $33
 	_march_cminus_extended $0f
 	_march_cminus_extended $00
-skip4testing: ;; HACK!
-
-
 
 	lda r3_
 	lsr				;; test bottom bit of r3

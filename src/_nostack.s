@@ -4,30 +4,23 @@
 	.import __ADDRLUTHI_LOAD__, __ADDRLUTLO_LOAD__
 
 
-	.export zp_return_0, zp_return_1, zp_return_2, zp_return_3, zp_return_4
+	.export zp_return
+		
 	
-
-	;; n times dex for args
-zp_return_4:
-	dex
-zp_return_3:
-	dex
-zp_return_2:
-	dex
-zp_return_1:
-	dex
-zp_return_0:
-	dex
+zp_return:
 	sta sa_
-	lda __ADDRLUTHI_LOAD__,Y
+	tsx				;; restore current ZP stack pointer
+	lda $fe,X		;; load return index
+	tax
+	lda __ADDRLUTHI_LOAD__,X
 	sta ret_+1
-	lda __ADDRLUTLO_LOAD__,Y
+	lda __ADDRLUTLO_LOAD__,X
 	sta ret_
+
+	tsx				;; restore current ZP stack pointer
+	lda $ff,X		;; load callee ZP stack pointer
+	tax
+	txs				;; restore callee ZP stack pointer
+	
 	lda sa_
-	ldy sy_
 	jmp (ret_)
-	
-	
-
-
-

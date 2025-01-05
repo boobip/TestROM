@@ -40,7 +40,7 @@ void irq_handler(void) {
 
 
 	if (sheila->system_via.ifr & 2) {
-		volatile uint8_t* const p = (uint8_t*)0x1a;// 01;
+		volatile uint8_t* const p = (uint8_t*)0x1a01;
 		*p ^= 128; // trample some RAM
 
 		//HACK:: trample some ZP for testing

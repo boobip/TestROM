@@ -420,8 +420,7 @@ seed = $b00b19
 ;; check for 16/32KB by memory alias
 	lda #$80
 	sta memsize_
-	lsr
-	sta a:memsize_ + $4000
+	lsr a:memsize_ + $4000	;; check for 16KB aliasing
 
 	;; feedback to user
 s_ = _zp_stack(0)

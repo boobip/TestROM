@@ -21,18 +21,19 @@ zp_stack_len = 24
 	.else
 		ldx #zp_stack
 	.endif
+	txs
 
 .ENDMACRO
 
 	;;
 	;; Call ZP function <func> & preserve ntmp locals
 	;; preserves Y & stashes A in sa_
+	;; X set to stack posn in call and on return, X trampled
 	
 .MACRO _zp_call func
 	.local ret, retptr_hi, retofs
 
-	sta sa_			;; refactor to remove this could save 114 bytes
-	lda #retofs		;; use X? Save stack pointer in S, trash X?
+	ldx #retofs		;; trample X with return value
 	jmp func
 	ret:
 		
@@ -50,14 +51,23 @@ zp_stack_len = 24
 .MACRO _zp_func_prologue func, pars, tmps
 	.export func
 	.proc func
+
+	sta sa_			;; preserve A
 	
 	npars_ .set 0
 	.ifnblank pars
 		npars_ .set .tcount({pars})
 	.endif
+	
+	txa				;; return index to A
+	tsx				;; restore ZP stack pointer to X
+	sta npars_,X	;; save return posn
+	txa				;; callee ZP frame pointer to A
+	sta npars_+1,X	;; save current ZP stack pointer
+	
 	.REPEAT npars_,I
-		inx
-		.ident(.string(.mid(I,1,{pars}))) .set ($100 - npars_ + I - 1)
+		inx			;; reserve ZP stack space for each par
+		.ident(.string(.mid(I,1,{pars}))) .set ($100 - npars_ + I - 2)
 	.ENDREP
 
 	ntmps_ .set 0
@@ -68,14 +78,14 @@ zp_stack_len = 24
 		.ident(.string(.mid(I,1,{tmps}))) .set I
 	.ENDREP
 	
-	sta zp_ret,X
-	inx
-	lda sa_
+	inx				;; reserve ZP stack space for return posn
+	inx				;; reserve ZP stack space for prev frame pointer
+	txs				;; set new ZP stack/frame pointer
+		
+	lda sa_			;; restore A
 .ENDMACRO
 
 .MACRO _zp_func_epilogue
-	sty sy_
-	ldy $ff,X		;; current stack pointer-1, zp_return decrements X
-	jmp .ident(.sprintf("zp_return_%d", npars_))
+	jmp zp_return
 	.endproc
 .ENDMACRO
