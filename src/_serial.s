@@ -50,7 +50,7 @@ _zp_func_epilogue
 ;; On Exit:
 ;;  
 ;; Clobbers:
-;;  A, Y
+;;  A
 
 _zp_func_prologue zp_ser_putc
 

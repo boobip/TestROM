@@ -349,7 +349,7 @@ rand_loop:
 :
 skip4testing: ;; HACK!
 	;; march c- extended
-	_march_cminus_extended $55
+	_march_cminus_extended $55	;; could save ~700 bytes by putting this in a loop
 	_march_cminus_extended $33
 	_march_cminus_extended $0f
 	_march_cminus_extended $00
@@ -412,34 +412,28 @@ _zp_func_prologue mem_error, {read pat mask}
 	eor pat,X
 	sta mask,X
 
-	lda #21*8
-	sta dst_
-
 	ldy #'7'
 	sec
 	rol mask,X
 loop_biterr:
 	tya
-	bcc :++
+	bcc :+
 	;; in error
 
-	sty sy_				;; store bit posn
+	;; generate char posn on screen
+	and #7
+	eor #7
+	asl
+	asl
+	asl
+	adc #21*8			;; offset char posn 21
+	sta dst_			;; save screen posn in dst_ 
 
-	ldy #7
-:	LDA font+8*('X'-' '),Y
-	STA (dst_),Y			;; put direct to screen
-	dey
-	bpl :-
-	
-	ldy sy_				;; restore bit posn
-	
 	lda #'X'
+	_zp_call zp_putc
+
 :	_zp_call zp_ser_putc
 
-	clc
-	lda dst_			;; move screen pointer along 1 char
-	adc #8
-	sta dst_
 	dey
 	asl mask,X
 	bne loop_biterr
