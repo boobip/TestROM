@@ -67,20 +67,17 @@
 .ENDMACRO
 
 
-.MACRO _nomem_return_sparse label, counter
+.MACRO _nomem_return_sparse label, counter, reg
 
 .REPEAT counter-1, I
-	cmp #.ident(.sprintf("%s%02d_rval",.string(label),I))
-	jeq .ident(.sprintf("%s%02d_return",.string(label),I))
-.ENDREP
-	jmp .ident(.sprintf("%s%02d_return",.string(label),counter-1))
-	
-.ENDMACRO
-
-.MACRO _nomem_return_sparse_x label, counter
-
-.REPEAT counter-1, I
+	.if .match(reg,X)
 	cpx #.ident(.sprintf("%s%02d_rval",.string(label),I))
+	.elseif .match(reg,Y)
+	cpy #.ident(.sprintf("%s%02d_rval",.string(label),I))
+	.else
+	cmp #.ident(.sprintf("%s%02d_rval",.string(label),I))
+	.endif
+
 	jeq .ident(.sprintf("%s%02d_return",.string(label),I))
 .ENDREP
 	jmp .ident(.sprintf("%s%02d_return",.string(label),counter-1))

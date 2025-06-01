@@ -37,12 +37,12 @@ loop:
 	.local loop, ok
 	ldy #(2000000*10/(baud*15)+1) ; 15 cycle loop
 loop:
-	lda acia
-	asl
-	asl
-	bcs ok
-	dey
-	bne loop
+	lda acia		;; 4
+	lsr				;; 2
+	lsr				;; 2
+	bcs ok			;; 2 - not taken
+	dey				;; 2
+	bne loop		;; 3 - taken
 ok:
 .ENDMACRO
 
@@ -59,25 +59,40 @@ loop:
 timeout:
 .ENDMACRO
 
-;; this one is decimal flag safe
-.MACRO _tx_wait_timeout ; 23 bytes
+;; only trashes A
+.MACRO _tx_wait_timeout ; 16 bytes
 	.local loop, decimal, timeout, n
 	n = (2000000*10/(baud*9)+1) ; 9 cycle loop
 	lda acia		;; 4
 	and #2
 	bne timeout
+	txa				;; stash x
+	ldx #n
 loop:
-	cmp #n			;; 2
-	beq timeout		;; 2 - not taken
-	adc #1			;; 2
-	bcc loop		;; 3 - taken
+	nop				;; 2
+	nop				;; 2
+	dex				;; 2
+	bne loop		;; 3 - taken
+	tax				;; restore x
+timeout:
+.ENDMACRO
 
-decimal:
-	cld				;; 2
-	adc #1			;; 2
-	cmp #.max(n-100,1)		;; 2
-	bne decimal		;; 3 - taken
-	sed
+;; only trashes X
+.MACRO _tx_wait_timeout_trashX ; 16 bytes
+	.local loop, decimal, timeout, n
+	n = (2000000*10/(baud*9)+1) ; 9 cycle loop
+	tax
+	lda acia		;; 4
+	lsr
+	lsr
+	txa				;; restore A
+	bcs timeout
+	ldx #n
+loop:
+	nop				;; 2
+	nop				;; 2
+	dex				;; 2
+	bne loop		;; 3 - taken
 timeout:
 .ENDMACRO
 

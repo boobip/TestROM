@@ -83,7 +83,7 @@ BINtoBCDlp:         ;;
 ;;
 ;;  HEX -> ASCII (decimal mode)
 
-.MACRO _hex2ascii_dec_hi
+.MACRO _hex2ascii_dec_hi ;; 8 bytes
   lsr
   lsr
   lsr
@@ -92,13 +92,13 @@ BINtoBCDlp:         ;;
   adc #$30
 .ENDMACRO
 
-.MACRO _hex2ascii_dec_lo
+.MACRO _hex2ascii_dec_lo ;; 6 bytes
   and #$0F
   cmp #9+1
   adc #$30
 .ENDMACRO
 
-.MACRO _hex2ascii_bin_hi
+.MACRO _hex2ascii_bin_hi ;; 12 bytes
 	lsr
 	lsr
 	lsr
@@ -110,7 +110,7 @@ BINtoBCDlp:         ;;
 	adc #$30
 .ENDMACRO
 
-.MACRO _hex2ascii_bin_lo
+.MACRO _hex2ascii_bin_lo ;; 10 bytes
 	and #$0F
 	cmp #$0A
 	bcc :+
@@ -119,7 +119,7 @@ BINtoBCDlp:         ;;
 	adc #$30
 .ENDMACRO
 
-.MACRO _hex2ascii_lut reg
+.MACRO _hex2ascii_lut reg ;; 4 bytes
 	.if .match(reg,X)
 		tax
 	.else
@@ -128,7 +128,7 @@ BINtoBCDlp:         ;;
 	lda hex2ascii_lut,reg
 .ENDMACRO
 
-.MACRO _hex2ascii_lut_hi reg
+.MACRO _hex2ascii_lut_hi reg ;; 8 bytes
 	lsr
 	lsr
 	lsr
@@ -136,13 +136,18 @@ BINtoBCDlp:         ;;
   _hex2ascii_lut reg
 .ENDMACRO
 
-.MACRO _hex2ascii_lut_lo reg
+.MACRO _hex2ascii_lut_lo reg ;; 6 bytes
   and #$0F
   _hex2ascii_lut reg
 .ENDMACRO
 
+.MACRO _bitzp
+	.byte $24
+.ENDMACRO
 
-
+.MACRO _bitabs
+	.byte $2c
+.ENDMACRO
 
 
 

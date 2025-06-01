@@ -88,8 +88,13 @@ screen_start=0;$5800/8
 	_nomem_call_sparse nomem_ser_puts, nomem_ser_puts_count, (relptr+.strlen(str))
 .ENDMACRO
 
-.MACRO _nomem_ser_putc
-	_nomem_call nomem_ser_putc, nomem_ser_putc_count
+;.MACRO _nomem_ser_putc
+;	_nomem_call nomem_ser_putc, nomem_ser_putc_count
+;.ENDMACRO
+
+.MACRO _nomem_puthex col
+	ldy #(col*8)
+	_nomem_call_sparse nomem_puthex, nomem_puthex_count, (col*8+16)
 .ENDMACRO
 
 .MACRO _nomem_putc col
@@ -97,10 +102,9 @@ screen_start=0;$5800/8
 	_nomem_call_sparse nomem_putc, nomem_putc_count, (col*8+8)
 .ENDMACRO
 
-.MACRO _nomem_putc_label col, char
-	ldx #(col*8)
-	ldy #(char-'@')*8
-	_nomem_call_sparse nomem_putc_lab, nomem_putc_lab_count, (col*8+8)
+.MACRO _putc_label row, col, char
+	lda font+8*(char-' '),X
+	sta 8*(row*40+col),X
 .ENDMACRO
 
 
@@ -115,43 +119,44 @@ screen_start=0;$5800/8
 	.IFNDEF mem_error_inv_count
 		mem_error_inv_count .set 0
 	.ENDIF
-	txs								;; stash pattern in S
 	.IFNBLANK inv
-		ldx #(mem_error_inv_count*8+4)	;; return point with inverse pattern
+		ldy #(mem_error_inv_count*8+4)	;; return point with inverse pattern
 		_nomem_call_sparse mem_error_inv, mem_error_inv_count, (mem_error_inv_count*8+4)
 	.ELSE
-		ldx #(mem_error_count*8)	;; return point without inverse pattern
+		ldy #(mem_error_count*8)		;; return point without inverse pattern
 		_nomem_call_sparse mem_error, mem_error_count, (mem_error_count*8)
 	.ENDIF
 .ENDMACRO
 
 .MACRO _checkboard_fill pattern
-	lda #pattern
-:	sta $00,Y
-	eor #$ff
-	iny
+:	lda #pattern
+	sta $00,X
+	inx
+	lda #pattern^$ff
+	sta $00,X
+	inx
 	bne :-
 .ENDMACRO
 
 .MACRO _checkboard_check pattern
-:	lda $00,Y
-	cmp #pattern
+:	lda #pattern
+	eor $00,X
 	beq :+
 	.IF pattern=$55
 		_mem_error 
 	.ELSE
 		_mem_error inv
 	.ENDIF
-:	iny
-	lda $00,Y
-	cmp #pattern^$ff
+:	inx
+	lda #pattern^$ff
+	eor $00,X
 	beq :+
 	.IF pattern=$55
 		_mem_error inv
 	.ELSE
 		_mem_error
 	.ENDIF
-:	iny
+:	inx
 	bne :---
 .ENDMACRO
 
@@ -162,63 +167,66 @@ screen_start=0;$5800/8
 ;; ↓(r0,w1); ↓(r1,w0); ↕(r0)
 .MACRO _march_cminus_extended
 ;; ↕(w0);
-	lda pattern,X
-:	sta $00,Y
-	iny
+	tya				;; pattern
+:	sta $00,X
+	inx
 	bne :-
 
 ;; ↑(r0,w1,r1);
-:	lda $00,Y
-	cmp pattern,X
+:	tya				;; pattern
+	eor $00,X
 	beq :+
 	_mem_error
-:	lda patterninv,X
-	sta $00,Y
-	lda $00,Y
-	cmp patterninv,X
+:	tya				;; pattern
+	eor #$ff		;; patterninv
+	sta $00,X
+	eor $00,X
 	beq :+
 	_mem_error inv
-:	iny
+:	inx
 	bne :---
 
 ;; ↑(r1,w0);
-:	lda $00,Y
-	cmp patterninv,X
+:	tya				;; pattern
+	eor #$ff		;; patterninv
+	eor $00,X
 	beq :+
 	_mem_error inv
-:	lda pattern,X
-	sta $00,Y
-	iny
+:	tya				;; pattern
+	sta $00,X
+	inx
 	bne :--
 
 ;; ↓(r0,w1);
-:	dey
-	lda $00,Y
-	cmp pattern,X
+:	dex
+	tya				;; pattern
+	eor $00,X
 	beq :+
 	_mem_error
-:	lda patterninv,X
-	sta $00,Y
-	tya		;; Z = (y==0)
+:	tya				;; pattern
+	eor #$ff		;; patterninv
+	sta $00,X
+	txa				;; Z = (X==0)
 	bne :--
 
 ;; ↓(r1,w0);
-:	dey
-	lda $00,Y
-	cmp patterninv,X
+:	dex
+	tya				;; pattern
+	eor #$ff		;; patterninv
+	eor $00,X		;; ZP,X wraps
 	beq :+
 	_mem_error inv
-:	lda pattern,X
-	sta $00,Y
-	tya		;; Z = (y==0)
+:	tya				;; pattern
+	sta $00,X		;; ZP,X wraps
+	txa				;; Z = (X==0)
 	bne :--
 
 ;; ↕(r0)
-:	lda $00,Y
-	cmp pattern,X
+:	tya				;; pattern
+	eor $00,X
 	beq :+
 	_mem_error
-:	iny
+:	inx
 	bne :--
 .ENDMACRO
 
@@ -375,12 +383,13 @@ init_cls:
 .CODE
 
 memtest_zp_loop:
-	lda #15
-	sta video_crtc_addr ; leave crtc address on R15 (8 bit)
-
-	;; checkerboard test 55, AA
 	ldx #0
 	ldy #0
+
+	lda #14
+	sta video_crtc_addr ; leave crtc address on R14 (6 bit)
+
+	;; checkerboard test 55, AA
 zp_check:
 	_checkboard_fill $55
 	_pause_ms 10
@@ -391,24 +400,29 @@ zp_check:
 	_checkboard_check $AA
 
 	;; march test 00,0F,33,55
-	ldx #0
 	ldy #0
 zp_march:
+	lda video_crtc_data
+	and #3
+	tax
+	ldy pattern,X
+	ldx #0
+
 	_march_cminus_extended
 
-	inx
-	cpx #4
-	beq :+
-	jmp zp_march
-:
+	inc video_crtc_data
+	lda video_crtc_data
+	beq :++				;; done enough iterations?
+	and #3
+	bne zp_march		;; march all patterns
+:	jmp zp_check		;; repeat mem test
 
-	;; check if D flag is set
-	lda #$99
+	;; check if D flag is set, indicates memory test error
+:	lda #$99
 	adc #1			; add in decimal mode will set carry
-	bcc :+
-	jmp memtest_zp_loop ;; seen an error... spin forever
-:	;; decimal mode still clear set so RAM test completed
+	bcs :--
 
+	;; decimal mode still clear set so RAM test completed
 
 	;; ZP passed the test
 	_zp_initstack 4 ;; don't trample mem_test args
@@ -457,7 +471,7 @@ init_memtest:
 
 	;; show bit positions on screen
 	_zp_puts "KB mm@aaaa 76543210 ee"
-		
+
 	;; do memory test
 	jmp mem_test
 	.export mem_test_return
@@ -501,166 +515,125 @@ screen_ofs = 40*8*err_row
 font_zero_p = font+8*('0'-' ')
 font_x_p = font+8*('X'-' ')
 
-; got... read, addr, pat
+; got... A=read, X=addr, Y=ret
 ; regs... a, x, y, s
 
 mem_error:
 mem_error_inv:
-	cld ;; decimal flag messes with serial timeout
-	sty video_crtc_data ;; stash mem address in crtc
-
-	ldy #14
-	sty video_crtc_addr
-
-	stx video_crtc_data ;; stash return point in crtc
-
-	;; add index to stashed return point to combine
+	cld					;; want to be in binary mode
+	txs
+	ldx #15
+	stx video_crtc_addr
 	tsx
-:	dex
-	bmi :+
-	inc video_crtc_data
-	bne :-
-:
-	iny
-	sty video_crtc_addr	;; back to crtc R15
+	stx video_crtc_data	;; store memory address in CRTC
 
-	;; A = read value
-	tax
-	txs ;; stash in S
 
-	;;
-	;; serial/screen out what was read
-	_hex2ascii_lut_hi Y		;; high char->A
-	tay
-	_nomem_ser_puts "\r\n"
-	_nomem_ser_putc
+	ldx #14
+	stx video_crtc_addr
 
-	;; write to screen
-	_nomem_putc 14
+	tax					;; stash bitmask
 
-	tsx
+	;; combine pattern & return address
+	lda video_crtc_data ;; get pattern
+	and #3
+	sta video_crtc_data
+	tya					;; get return address
+	ora video_crtc_data
+	sta video_crtc_data	;; store return address in CRTC
+
 	txa
-	_hex2ascii_lut_lo Y		;; low char->A
-	tay
-	_nomem_ser_putc
-
-	;; write to screen
-	_nomem_putc 15
+	tay					;; copy bitmask to Y
 
 	;;
-	;; serial/screen out address
-	lda video_crtc_data
-	_hex2ascii_lut_hi Y		;; high char->A
-	tay
-	_nomem_ser_puts " @ 00"	;; address prefix
-	_nomem_ser_putc
+	;; display error bit mask - don't rely on CRTC
+	_nomem_ser_puts "\r\n("	;; open bit errors
 
-	;; write to screen
-	_nomem_putc 10
+	ldx #7
 
-	lda video_crtc_data
-	_hex2ascii_lut_lo Y		;; low char->A
-	tay
-	_nomem_ser_putc
-
-	;; write to screen
-	_nomem_putc 11
-
-	_nomem_ser_puts " ("	;; open bit errors
-
-	;;
-	;; fetch pattern index from CRTC & lookup pattern
-	ldy #14
-	sty video_crtc_addr
-	lda video_crtc_data
-
-	and #7
-	tay
-
-	;;
-	;; display error bit mask
-	tsx					;; restore read value
-	txa
-	eor pattern,y		;; make bitmask for bad bits
-	
-	ldy #7				;; starting at bit 7
-	sec
-	rol a				;; get 1st bit & rol in a 1 for loop counting
 biterror:
-	tax
-	txs					;; stash bitmask in S
+	txs					;; use S as loop counter
+	tya					;; copy bitmask to A
+	tsx					;; copy loop counter to X
+:	lsr
+	dex
+	bpl :-				;; carry now holds error bit
 
-	tya
-	ora #'0'			;; create bit position character
-	tax
-	bcc @next			;; branch taken when not in error
+	tsx
+	txa					;; loop counter -> A
+	bcc @skipdraw		;; branch taken when not in error
 	
 	;; bit in error, display on screen
-	tya					;; bit posn
+	eor #7				;; reverse bit position
 	asl
 	asl
 	asl
-	eor #$3f			;; reverse bit posn + set bottom 3 bits (paint char descending)
 	tax					;; screen offset in X
 
 	;; copy X to screen
-	ldy #7
-:	lda font_x_p,Y
-	sta screen_ofs+8*40,X
+	lda #$66
+	sta screen_ofs+8*40+0,X
+	sta screen_ofs+8*40+1,X
+	sta screen_ofs+8*40+5,X
+	sta screen_ofs+8*40+6,X
+	lda #$3C
+	sta screen_ofs+8*40+2,X
+	sta screen_ofs+8*40+4,X
+	lda #$18
+	sta screen_ofs+8*40+3,X
+	
+	lda #'X'^'0'		;; EOR in '0'
+@skipdraw:
+	eor #'0'			;; convert loop counter to ASCII
+	_tx_wait_timeout_trashX
+	sta acia_d 			;; push bit posn or X for bad bit to serial
+	
+	;; iterate over all bits
+	tsx
 	dex
-	dey
-	bpl :-
-	
-	ldx #'X'
-@next:
-	_tx_wait_timeout_y
-	stx acia_d 			;; push bit posn or X for bad bit to serial
-	
-	;; count zeros in bitmask to determine which bit number
-	tsx					;; fetch bitmask
-	txa
-	ldy #7
-:	lsr
-	dey					;; count down trailing 0 in Y
-	bcc :-
-	
-	txa
-	asl a				;; shift left to get next bit in carry
-	bne biterror
-	
-	_nomem_ser_puts ") pat: "	;; close bit error braces
-	
-	;;
-	;; fetch pattern index from CRTC & lookup pattern
-	lda video_crtc_data
+	bpl biterror
+		
+	_nomem_ser_puts ") "	;; close bit error braces
 
+	;;
+	;; serial/screen out what was read
+	lda video_crtc_data
 	and #7
-	tay
-	ldx pattern,y
-	txs
+	tax
+	tya
+	eor pattern,X			;; A holds byte read from memory
+	tax
+
+	_nomem_puthex 10		;; write to serial & screen
 	
+	_nomem_ser_puts " : "
+
 	;;
 	;; serial/screen out pattern
-	txa
-	_hex2ascii_lut_hi Y		;; high char->A
+	lda video_crtc_data
+	and #7
 	tay
-	_nomem_ser_putc
+	ldx pattern,Y
+	
+	_nomem_puthex 14		;; write to serial & screen
 
-	;; write to screen
-	_nomem_putc 18
+	_nomem_ser_puts " @ 00"	;; address prefix
 
-	tsx
-	txa
-	_hex2ascii_lut_lo Y		;; low char->A
-	tay
-	_nomem_ser_putc
+	;;
+	;; serial/screen out address
+	lda #15
+	sta video_crtc_addr
+	ldx video_crtc_data
 
-	;; write to screen
-	_nomem_putc 19
-
-	_nomem_putc_label 10,'A'
-	_nomem_putc_label 14,'M'
-	_nomem_putc_label 18,'P'
+	_nomem_puthex 18		;; write to serial & screen
+	
+	;;
+	;; put labels on screen
+	ldx #7
+:	_putc_label err_row,18,'A'
+	_putc_label err_row,10,'M'
+	_putc_label err_row,14,'P'
+	dex
+	bpl :-
 	
 	;;
 	;; init bit positions on screen
@@ -673,18 +646,23 @@ biterror:
 	dex
 	bpl :-	
 
-	; restore pattern index to X, mem address to Y and jump point to A
+	; restore pattern to Y, mem address to X and jump point to A
+	ldx video_crtc_data		;; mem address
+	txs
+	
+	lda #14
+	sta video_crtc_addr ; set crtc address to R14
+	
 	lda video_crtc_data ; load pattern index & return jump point
-
 	tay
+
 	and #3			;; mask off pattern index
 	tax
-	tya		
+	tya
+	ldy pattern,X	;; restore pattern
 	and #$3C		;; return jump point in A
 
-	ldy #15
-	sty video_crtc_addr ; set crtc address to R15
-	ldy video_crtc_data ; restore memtest address
+	tsx		;; restore memtest address
 	sed		;; decimal flag used to store if memory error occurred
 ;; return to correct point in memory test
 .REPEAT mem_error_inv_count, I
@@ -707,41 +685,70 @@ nomem_ser_puts:
 	_tx_wait_timeout
 	lda __STRINGS_LOAD__,X
 	bne :-				;; stop if hit null termination
-	_nomem_return_sparse_x nomem_ser_puts, nomem_ser_puts_count
+	_nomem_return_sparse nomem_ser_puts, nomem_ser_puts_count, X
 
 ;;
 ;; No memory put char from Y, trashes A, X
-nomem_ser_putc:
-	_tx_wait_timeout
-	sty acia_d ;write data
-	_nomem_return nomem_ser_putc, nomem_ser_putc_count
+;nomem_ser_putc:
+;	_tx_wait_timeout
+;	sty acia_d ;write data
+;	_nomem_return nomem_ser_putc, nomem_ser_putc_count
 
 ;;
-;; No memory put char to screen, trashes A, X, Y
-nomem_putc:
-	tya
-	sec
-	sbc #$30 ;; character zero offset
-	asl
-	asl
-	asl
-	tay
-:	lda font_zero_p,Y
-	sta screen_ofs+8*40,X
-	iny
-	inx
-	txa
-	and #7
-	bne :-
-	_nomem_return_sparse_x nomem_putc, nomem_putc_count
-
-nomem_putc_lab:
-:	lda font+32*8,Y
-	sta screen_ofs,X
-	iny
-	inx
-	txa
-	and #7
-	bne :-
-	_nomem_return_sparse_x nomem_putc_lab, nomem_putc_lab_count
+;; No memory put hex value to serial & screen, trashes A, X, Y, S
+;; On entry value in X, posn/ret in Y
+nomem_puthex:
+	txs		;; preserve byte value
 	
+	;; putc high nibble
+	txa
+	lsr
+	lsr
+	lsr
+	lsr
+	tax
+	lda hex2ascii_lut,X
+
+	_tx_wait_timeout_trashX
+	sta acia_d ;write data to serial port
+	
+	sec
+	sbc #$30 ;; character zero offset '0'
+	asl
+	asl
+	asl
+	tax
+:	lda font_zero_p,X
+	sta screen_ofs+8*40,Y
+	iny
+	inx
+	txa
+	and #7
+	bne :-
+	
+	;; putc low nibble
+	tsx
+	txa
+	and #$0f
+	tax
+	lda hex2ascii_lut,X
+
+	_tx_wait_timeout_trashX
+	sta acia_d ;write data to serial port
+	
+	sec
+	sbc #$30 ;; character zero offset '0'
+	asl
+	asl
+	asl
+	tax
+:	lda font_zero_p,X
+	sta screen_ofs+8*40,Y
+	iny
+	inx
+	txa
+	and #7
+	bne :-
+	
+	_nomem_return_sparse nomem_puthex, nomem_puthex_count, Y
+
