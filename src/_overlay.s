@@ -36,14 +36,31 @@ get_crunched_byte = zp_stack
 _byte_lo = get_crunched_byte+1
 _byte_hi =_byte_lo + 1
 get_crunched_byte_start:
-	lda $ffff			;; needs to be set correctly before calling decrunch
+	lda a:$ffff			;; needs to be set correctly before calling decrunch
 	inc _byte_lo
-	bne _byte_skip_hi
+	bne :+
 	inc _byte_hi
-_byte_skip_hi:
-	rts					
+:	rts					
 get_crunched_byte_end:
 
+
+;; far_call
+;; on entry new bank in Y, func in ret_
+	.export far_call
+.proc far_call
+	cpy #$ff		;; if ROM (bank FF) skip overlay expand
+	beq jmp_ret_	;; tail call, no RTS
+	cpy current_bank_
+	beq jmp_ret_	;; if same bank then skip overlay expand
+	
+	lda current_bank_
+	pha
+	jsr decrunch_ovl ;; decrunch bank (in y)
+	jsr jmp_ret_	;; do function call
+	pla				;; restore current bank
+	tay
+	;; fall through to decrunch_ovl
+.endproc
 
 ;;
 ;; Decrunch an overlay
@@ -71,33 +88,6 @@ get_crunched_byte_end:
 	jmp decrunch ;; tail call
 .endproc
 
-;; far_call
-;; on entry new bank in Y, func in ret_
-	.export far_call
-.proc far_call
-	
-	lda current_bank_
-	pha
-
-	cpy current_bank_
-	beq :+			;; if same bank then skip overlay expand
-	tya
-	bmi :+			;; if ROM (bank FF) skip overlay expand
-	
-	jsr decrunch_ovl
-	
-:	jsr jmp_ret_	;; do function call
-	
-	pla				;; pop previous bank
-	cmp current_bank_
-	beq	:+			;; if same bank then skip overlay expand
-	tay
-	bmi :+			;; if ROM (bank FF) skip overlay expand
-	
-	jmp decrunch_ovl ;; tail call
-	
-:	rts	
-.endproc
 
 
 ;; far_jump_ax
