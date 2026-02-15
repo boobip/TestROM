@@ -129,11 +129,11 @@ screen_start=0;$5800/8
 .ENDMACRO
 
 .MACRO _checkboard_fill pattern
-:	lda #pattern
-	sta $00,X
+	lda #pattern
+	ldy #pattern^$ff
+:	sta $00,X
 	inx
-	lda #pattern^$ff
-	sta $00,X
+	sty $00,X
 	inx
 	bne :-
 .ENDMACRO
@@ -315,7 +315,7 @@ init_cls:
 ;; clear screen
 	ldx #0
 	txa
-:	sta a:$0000,X
+:	sta $00,X
 	sta a:$0100,X
 	sta a:$0200,X
 	sta a:$0300,X
