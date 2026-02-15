@@ -251,6 +251,20 @@ back2moslow: ;; 13 bytes
 	sta $fe4e	;; make MOS think cold boot
 	jmp ($fffc) ;; reset
 back2moslowend:
+
+;;=====================================
+;; NMI handler
+;; just increment counter
+;;
+
+	.export nmi_handler
+nmi_handler:
+	inc nmicount_
+	bne an_rti
+	inc nmicount_+1
+an_rti:		;; useful to set V flag with BIT instruction, RTI opcode $40
+	rti
+	
 	
 ;;=====================================
 ;; initial reset handler

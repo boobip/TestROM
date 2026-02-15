@@ -28,11 +28,11 @@ __CODE static void init_uservia(void);
 
 
 
-__attribute__((naked))
-void nmi_handler(void) {
-	++nmicount_;
-	__asm__("rti");
-}
+//__attribute__((naked))
+//void nmi_handler(void) {
+//	++nmicount_;
+//	__asm__("rti");
+//}
 
 __attribute__((naked))
 void irq_handler(void) {

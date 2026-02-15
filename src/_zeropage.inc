@@ -52,6 +52,7 @@
 	_zp_byte	memsize_
 	_zp_byte	current_bank_
 	_zp_dword	seed_
+	_zp_word	nmicount_
 	
 ;	_zp_byte	zp_stack_ptr_
 

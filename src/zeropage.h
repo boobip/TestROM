@@ -52,6 +52,7 @@ _zp_word(ret_)
 _zp_byte(memsize_)
 
 _zp_byte(zp_stack)
+_zp_word(nmicount_)
 
 // C declared zero page variables
 #ifdef EMIT_ZEROPAGE
@@ -62,7 +63,7 @@ _zp_byte(zp_stack)
 DECLZP(char*, displaypointer)
 DECLZP(void*, outfn_)
 DECLZP(uint32_t, irqcount_)
-DECLZP(uint32_t, nmicount_)
+//DECLZP(uint32_t, nmicount_)
 DECLZP(uint8_t, currentkey_)
 DECLZP(uint8_t, lastkey_)
 
