@@ -20,6 +20,8 @@ init_acia = $15
 init_ula = 64
 .ENDIF
 
+.DEFINE NLOOPS(ncycles)	(2000000*10+baud*ncycles-1)/(baud*ncycles) ; 10 bits per char, 2000000MHz 6502
+
 
 ;;=====================================
 ;; serial helper macros
@@ -35,7 +37,7 @@ loop:
 
 .MACRO _tx_wait_timeout_y ; 12 bytes
 	.local loop, ok
-	ldy #(2000000*10/(baud*15)+1) ; 15 cycle loop
+	ldy #NLOOPS(15) ; 15 cycle loop
 loop:
 	lda acia		;; 4
 	lsr				;; 2
@@ -54,20 +56,19 @@ ok:
 loop:
 	clc
 	adc #1
-	cmp #(2000000*10/(baud*9)+1) ; 9 cycle loop
+	cmp #NLOOPS(9)	;;  9 cycle loop
 	bne loop
 timeout:
 .ENDMACRO
 
 ;; only trashes A
 .MACRO _tx_wait_timeout ; 16 bytes
-	.local loop, decimal, timeout, n
-	n = (2000000*10/(baud*9)+1) ; 9 cycle loop
+	.local loop, decimal, timeout
 	lda acia		;; 4
 	and #2
 	bne timeout
 	txa				;; stash x
-	ldx #n
+	ldx #NLOOPS(9)	; 9 cycle loop
 loop:
 	nop				;; 2
 	nop				;; 2
@@ -79,15 +80,14 @@ timeout:
 
 ;; only trashes X
 .MACRO _tx_wait_timeout_trashX ; 16 bytes
-	.local loop, decimal, timeout, n
-	n = (2000000*10/(baud*9)+1) ; 9 cycle loop
+	.local loop, decimal, timeout
 	tax
 	lda acia		;; 4
 	lsr
 	lsr
 	txa				;; restore A
 	bcs timeout
-	ldx #n
+	ldx #NLOOPS(9)	; 9 cycle loop
 loop:
 	nop				;; 2
 	nop				;; 2
