@@ -389,48 +389,44 @@ init_cls:
 
 
 ;; test zero page
+.pushseg
 .RODATA
 	pattern:
 	.byte $55, $0F, $33, $0
 	patterninv:
 	.byte $AA, $F0, $CC, $FF
-.CODE
+.popseg
 
 memtest_zp_loop:
-	ldx #0
-	ldy #0
-
 	lda #14
-	sta video_crtc_addr ; leave crtc address on R14 (6 bit)
+	sta video_crtc_addr ;; leave crtc address on R14 (6 bit)
+	stx video_crtc_data ;; guarantee R14=0
 
 	;; checkerboard test 55, AA
 zp_check:
 	_checkboard_fill $55
-	_pause_ms 10
-	_checkboard_check $55
+	_checkboard_check $55	;; CRTC R14=0 so pattern is 55
 	
 	_checkboard_fill $AA
-	_pause_ms 10
 	_checkboard_check $AA
 
 	;; march test 00,0F,33,55
-	ldy #0
 zp_march:
 	lda video_crtc_data
 	and #3
-	tax
-	ldy pattern,X
-	ldx #0
+	tay
+	lda pattern,Y		;; load pattern
+	tay					;; Y=pattern
 
 	_march_cminus_extended
 
 	inc video_crtc_data
+	tya					;; pattern to A
+	bne zp_march		;; march all patterns, 0 is last one
 	lda video_crtc_data
 	beq :++				;; done enough iterations?
-	and #3
-	bne zp_march		;; march all patterns
 :	jmp zp_check		;; repeat mem test
-
+	
 	;; check if D flag is set, indicates memory test error
 :	lda #$99
 	adc #1			; add in decimal mode will set carry
@@ -485,6 +481,7 @@ init_memtest:
 
 	;; show bit positions on screen
 	_zp_puts "KB mm@aaaa 76543210 ee"
+;	_zp_puts "KB 7654321 mm:pp@aaaa"
 
 	;; do memory test
 	jmp mem_test
@@ -541,18 +538,16 @@ mem_error_inv:
 	tsx
 	stx video_crtc_data	;; store memory address in CRTC
 
-
 	ldx #14
 	stx video_crtc_addr
 
 	tax					;; stash bitmask
 
 	;; combine pattern & return address
-	lda video_crtc_data ;; get pattern
-	and #3
-	sta video_crtc_data
 	tya					;; get return address
-	ora video_crtc_data
+	eor video_crtc_data
+	and #$FC			;; mask src (return address)
+	eor video_crtc_data
 	sta video_crtc_data	;; store return address in CRTC
 
 	txa
@@ -567,7 +562,6 @@ mem_error_inv:
 biterror:
 	txs					;; use S as loop counter
 	tya					;; copy bitmask to A
-	tsx					;; copy loop counter to X
 :	lsr
 	dex
 	bpl :-				;; carry now holds error bit
@@ -615,7 +609,6 @@ biterror:
 	tax
 	tya
 	eor pattern,X			;; A holds byte read from memory
-	tax
 
 	_nomem_puthex 10		;; write to serial & screen
 	
@@ -626,7 +619,7 @@ biterror:
 	lda video_crtc_data
 	and #7
 	tay
-	ldx pattern,Y
+	lda pattern,Y
 	
 	_nomem_puthex 14		;; write to serial & screen
 
@@ -634,11 +627,13 @@ biterror:
 
 	;;
 	;; serial/screen out address
-	lda #15
-	sta video_crtc_addr
-	ldx video_crtc_data
-
-	_nomem_puthex 18		;; write to serial & screen
+	ldx #15
+	stx video_crtc_addr
+	lda video_crtc_data
+	dex
+	stx video_crtc_addr
+	
+	_nomem_puthex 18		;; write to serial & screen, puthex writes addr=>S
 	
 	;;
 	;; put labels on screen
@@ -661,19 +656,13 @@ biterror:
 	bpl :-	
 
 	; restore pattern to Y, mem address to X and jump point to A
-	ldx video_crtc_data		;; mem address
-	txs
-	
-	lda #14
-	sta video_crtc_addr ; set crtc address to R14
-	
 	lda video_crtc_data ; load pattern index & return jump point
 	tay
 
 	and #3			;; mask off pattern index
 	tax
 	tya
-	ldy pattern,X	;; restore pattern
+	ldy pattern,X	;; restore current pattern
 	and #$3C		;; return jump point in A
 
 	tsx		;; restore memtest address
@@ -712,22 +701,28 @@ nomem_ser_puts:
 ;; No memory put hex value to serial & screen, trashes A, X, Y, S
 ;; On entry value in X, posn/ret in Y
 nomem_puthex:
+	tax
 	txs		;; preserve byte value
 	
 	;; putc high nibble
-	txa
 	lsr
 	lsr
 	lsr
 	lsr
+
+	bit an_rti	;; Set V flag RTI opcode $40
+	.byte $E0	;; CPX imm, skip CLV on 1st pass but don't trash V
+:	clv			;; opcode $B8
+
 	tax
 	lda hex2ascii_lut,X
 
 	_tx_wait_timeout_trashX
 	sta acia_d ;write data to serial port
 	
-	sec
-	sbc #$30 ;; character zero offset '0'
+;	sec
+;	sbc #$30 	;; character zero offset '0'
+	eor #$30	;; saves a byte vs SBC version & don't trample V
 	asl
 	asl
 	asl
@@ -744,25 +739,8 @@ nomem_puthex:
 	tsx
 	txa
 	and #$0f
-	tax
-	lda hex2ascii_lut,X
-
-	_tx_wait_timeout_trashX
-	sta acia_d ;write data to serial port
 	
-	sec
-	sbc #$30 ;; character zero offset '0'
-	asl
-	asl
-	asl
-	tax
-:	lda font_zero_p,X
-	sta screen_ofs+8*40,Y
-	iny
-	inx
-	txa
-	and #7
-	bne :-
+	bvs :--		;; V set, print low nibble. V Clear, done.
 	
 	_nomem_return_sparse nomem_puthex, nomem_puthex_count, Y
 
