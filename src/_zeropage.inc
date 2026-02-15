@@ -44,8 +44,8 @@
 ;; unused sx_
 
 	_zp_byte	sa_
-	_zp_byte	sx_
-	_zp_byte	sy_
+;;	_zp_byte	sx_
+;;	_zp_byte	sy_
 	_zp_word	src_
 	_zp_word	dst_
 	_zp_word	ret_

@@ -54,11 +54,8 @@ _zp_func_epilogue
 
 _zp_func_prologue zp_ser_putc
 
-	sty sy_
-	_tx_wait_timeout_y	;; trashes Y
-	lda sa_	;; call saved a in sa_
+	_tx_wait_timeout_trashX	;; trashes X only
 	_tx_byte
-	ldy sy_
 	
 _zp_func_epilogue
 

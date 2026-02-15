@@ -50,11 +50,11 @@ _zp_func_epilogue
 ;; On Exit:
 ;;  dst_ += 8
 ;; Clobbers:
-;;  A
+;;  flags
 
-_zp_func_prologue zp_putc
+_zp_func_prologue zp_putc, {n}
 
-	sty sy_
+	sty n,X			;; preserve Y on ZP stack
 	and #$7f		;; defensive
 	ldy #>(font_base>>2)
 	sty src_+1
@@ -76,8 +76,8 @@ _zp_func_prologue zp_putc
 	sta dst_
 	bcc :+
 	inc dst_+1	
-:	ldy sy_
-	lda sa_
+:	ldy n,X			;; restore Y
+	lda sa_			;; restore A
 
 _zp_func_epilogue
 
@@ -85,9 +85,7 @@ _zp_func_epilogue
 ;; Put hex to screen using zeropage return mechanism 
 ;; On Entry:
 ;;  A    : number to print
-;;  dst_ : destination pointer
 ;; On Exit:
-;;  dst_ += 16
 ;; Clobbers:
 ;;  Y
 
