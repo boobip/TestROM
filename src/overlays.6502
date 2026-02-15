@@ -27,7 +27,7 @@ GUARD font
 .test	
 	_ovl 40*5*8, "HelloWorld.exo"
 
-
+PRINT " ** OVL size=",(*-EXOSTARTADDR)
 PRINT " ** ROM bytes free=",(font-*)
 
 ;; pad with $ff
