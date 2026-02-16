@@ -3,7 +3,7 @@
 noverlays = 3
 
 tbl = $ff00
-tbl_end = tbl+2*noverlays
+tbl_end = tbl+OVLTABLESIZE
 font = $f900
 
 MACRO _ovl load_addr, filename
@@ -27,8 +27,7 @@ GUARD font
 .test	
 	_ovl 40*5*8, "HelloWorld.exo"
 
-PRINT " ** OVL size=",(*-EXOSTARTADDR)
-PRINT " ** ROM bytes free=",(font-*)
+PRINT " ** OVL space=",(font-EXOSTARTADDR),"; OVL size=",(*-EXOSTARTADDR),"; ROM bytes free=",(font-*)
 
 ;; pad with $ff
 FOR i,*,font-1

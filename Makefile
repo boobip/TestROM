@@ -89,7 +89,8 @@ $(ODIR)/%.bin: $(NOOVL_PATH) ;
 
 $(TARGET_PATH): $(NOOVL_PATH) $(OVLEXOS) src/overlays.6502
 	$(eval SADDR:=$(shell awk 'match($$0,/__OVERLAYS_LOAD__\s+([[:xdigit:]]+)/,arr){print arr[1]; exit}' $(BDIR)/test.map))
-	beebasm -vc -D EXOSTARTADDR=0x$(SADDR) -o $(TARGET_PATH) -i src/overlays.6502
+	$(eval SZTBL:=$(shell awk 'match($$0,/__OVL_TBL_SIZE__\s+([[:xdigit:]]+)/,arr){print arr[1]; exit}' $(BDIR)/test.map))
+	beebasm -vc -D EXOSTARTADDR=0x$(SADDR) -D OVLTABLESIZE=0x$(SZTBL) -o $(TARGET_PATH) -i src/overlays.6502
 #	awk 'match($$0,/__OVERLAYS_LOAD__\s+([[:xdigit:]]+)/,arr){print arr[1]; exit}' $(BDIR)/test.map | xargs -I {} beebasm -vc -D EXOSTARTADDR=0x{} -o $(TARGET_PATH) -i src/overlays.6502
 
 .PHONY: asm
